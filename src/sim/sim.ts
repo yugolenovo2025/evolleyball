@@ -88,8 +88,19 @@ const SKILL_POOL: Record<PosKey, string[]> = {
   L: ['スーパーレシーブ', '守備範囲拡大', '先読み', '鉄壁の守護'],
 };
 
-const rnd99 = (mid: number, spread = 22) =>
+const rnd99 = (mid: number, spread = 18) =>
   Math.max(1, Math.min(99, Math.round(mid + (Math.random() * 2 - 1) * spread)));
+
+// 選手の質のばらつき（大量の候補を「超一流〜平均〜控え」の幅で用意する）
+// 全能力にこのオフセットが乗る → 総合値が 45〜95 くらいに広く分布する
+function qualityOffset(): number {
+  const r = Math.random();
+  if (r < 0.08) return 24; // 超一流（スター）
+  if (r < 0.22) return 14; // 一流
+  if (r < 0.48) return 5; // 好選手
+  if (r < 0.78) return -4; // 平均
+  return -16; // 控え・伸びしろ枠
+}
 
 export function posRating(pos: PosKey, st: Stats99): number {
   const w = POS_WEIGHTS[pos];
@@ -114,16 +125,17 @@ let candSeq = 0;
 // 契約候補を1人生成する
 export function genCandidate(pos: PosKey): RosterEntry {
   const prof = POS_PROFILE[pos];
+  const q = qualityOffset(); // この選手の総合的な質
   const st: Stats99 = {
-    spike: rnd99(prof.spike),
-    power: rnd99(prof.power),
-    block: rnd99(prof.block),
-    receive: rnd99(prof.receive),
-    jump: rnd99(prof.jump),
-    agility: rnd99(prof.agility),
-    teamwork: rnd99(prof.teamwork),
-    decision: rnd99(prof.decision),
-    stamina: rnd99(prof.stamina),
+    spike: rnd99(prof.spike + q),
+    power: rnd99(prof.power + q),
+    block: rnd99(prof.block + q),
+    receive: rnd99(prof.receive + q),
+    jump: rnd99(prof.jump + q),
+    agility: rnd99(prof.agility + q),
+    teamwork: rnd99(prof.teamwork + q),
+    decision: rnd99(prof.decision + q),
+    stamina: rnd99(prof.stamina + q),
   };
   // 特化型契約: 役割特化で総合は低いがコストが激安になる
   let focus: string | null = null;
@@ -133,14 +145,16 @@ export function genCandidate(pos: PosKey): RosterEntry {
     st.spike = Math.max(1, st.spike - 18);
   }
   const rating = posRating(pos, st);
-  let cost = Math.max(4, Math.round(rating * 0.28 - 6 + Math.random() * 2));
-  if (focus) cost = Math.max(3, Math.round(cost * 0.55));
+  // コストは総合値に急勾配で連動（強い選手ほど桁違いに高い＝取捨選択が生まれる）
+  // 目安: 総合50→3 / 65→12 / 80→28 / 90→41
+  let cost = Math.max(2, Math.round(2 + Math.pow(Math.max(0, rating - 48), 1.55) * 0.12));
+  if (focus) cost = Math.max(2, Math.round(cost * 0.55));
   // スキル: 40%で1つ、18%でさらにもう1つ
   const skills: string[] = [];
   const pool = [...SKILL_POOL[pos]].sort(() => Math.random() - 0.5);
   if (Math.random() < 0.4) skills.push(pool[0]);
   if (skills.length && Math.random() < 0.45) skills.push(pool[1]);
-  if (skills.length) cost += skills.length * 2; // スキル持ちは少し高い
+  if (skills.length) cost += skills.length * 3; // スキル持ちは価値が高い
 
   // ---- データアナリティクス ----
   // 攻撃コース傾向（この選手の「癖」。CPU は実際にこの分布で打つ）
@@ -461,6 +475,15 @@ export class VolleySim {
     return this.teamPlayers(team).some(
       (p) => (!frontOnly || this.isFront(p.slot)) && p.roster.skills.includes(skill),
     );
+  }
+
+  // スキル発動を1プレー中に重複なく通知（画面演出用）
+  private firedSkills = new Set<string>();
+  private fireSkill(team: Team, name: string) {
+    const key = team + name;
+    if (this.firedSkills.has(key)) return;
+    this.firedSkills.add(key);
+    this.emit('skill', name, team);
   }
 
   // 動作ごとのスタミナ消耗量（ジャンプ/スパイクは重い）
@@ -895,6 +918,7 @@ export class VolleySim {
           (receiver.roster.skills.includes('スーパーレシーブ') ? 0.08 : 0) +
           libBoost - // 契約リベロが後衛守備を底上げ
           (1 - this.fatigue(receiver)) * 0.12; // 疲労で精度低下
+        if (receiver.roster.skills.includes('スーパーレシーブ')) this.fireSkill(plan.team, 'スーパーレシーブ');
         const q = clamp(
           0.88 - servePressure + recvBonus + this.consumeRecvTiming(plan.team) - rnd(0, 0.3),
           0.02,
@@ -955,7 +979,10 @@ export class VolleySim {
         {
           let dq = clamp(rnd(0.35, 0.85) + this.consumeRecvTiming(plan.team), 0.02, 1);
           // 鉄壁の守護: 守備範囲のボールを確実にセッターへ
-          if (this.teamHasSkill(plan.team, '鉄壁の守護')) dq = Math.max(dq, 0.55);
+          if (this.teamHasSkill(plan.team, '鉄壁の守護')) {
+            dq = Math.max(dq, 0.55);
+            this.fireSkill(plan.team, '鉄壁の守護');
+          }
           this.passToSetter(plan.team, dq);
         }
         return;
@@ -1059,7 +1086,10 @@ export class VolleySim {
     // トス入力プロンプト（人間チームのみ）と、相手のブロックコミット窓
     // 判定窓はパス精度 × セッターの連携(トス精度)。「完璧な導き」は常に広い窓
     let ws = (0.55 + 0.75 * passQ) * (0.88 + (setter.roster.st.teamwork / 99) * 0.27);
-    if (setter.roster.skills.includes('完璧な導き')) ws = Math.max(ws, 1.05);
+    if (setter.roster.skills.includes('完璧な導き')) {
+      ws = Math.max(ws, 1.05);
+      this.fireSkill(team, '完璧な導き');
+    }
     this.setPrompt = {
       team,
       opensAt: this.time,
@@ -1093,6 +1123,7 @@ export class VolleySim {
   }
 
   private performSet(team: Team) {
+    this.firedSkills.clear(); // 新しい攻撃シーケンス→スキル演出をリセット
     const sp = this.setPrompt;
     let choice: AttackChoice;
     let quality: TossQuality;
@@ -1217,7 +1248,10 @@ export class VolleySim {
       let acc = 0.4 + (bestDec / 99) * 0.45;
       if (this.teamHasSkill(team, '囮の達人', true)) acc -= 0.15;
       // 先読み: コースを事前に察知して自動照準の精度が上がる
-      if (this.teamHasSkill(defTeam, '先読み')) acc += 0.18;
+      if (this.teamHasSkill(defTeam, '先読み')) {
+        acc += 0.18;
+        this.fireSkill(defTeam, '先読み');
+      }
       this.blockCommit[defTeam] =
         Math.random() < acc ? CHOICE_ZONE[choice] : pick(['L', 'M', 'R'] as BlockZone[]);
     }
@@ -1260,22 +1294,27 @@ export class VolleySim {
       const defJump =
         defFront.reduce((s, p) => s + p.roster.st.jump, 0) / Math.max(1, defFront.length);
       blocked += ((defJump - 62) / 99) * 0.1;
-      // スキル（絶好調 form で効果増幅）
+      // スキル（絶好調 form で効果増幅）。発動時は画面演出のため fireSkill で通知
       const amp = this.formAmp(attacker);
       const sk = attacker.roster.skills;
-      if (sk.includes('強打') || sk.includes('決定力')) kill += 0.06 * amp;
-      if (choice === 'QUICK' && sk.includes('速攻')) kill += 0.08 * amp;
-      if (choice === 'PARA' && sk.includes('速攻')) kill += 0.05 * amp;
-      if ((choice === 'PIPE' || choice === 'RIGHT') && sk.includes('バックアタック'))
-        kill += 0.1 * amp; // OP のバックアタック
-      if (sk.includes('空中姿勢調整')) err -= 0.05 * amp; // 空中で体勢を立て直しミスを減らす
+      if (sk.includes('強打')) { kill += 0.06 * amp; this.fireSkill(team, '強打'); }
+      if (sk.includes('決定力')) { kill += 0.06 * amp; this.fireSkill(team, '決定力'); }
+      if (choice === 'QUICK' && sk.includes('速攻')) { kill += 0.08 * amp; this.fireSkill(team, '速攻'); }
+      if (choice === 'PARA' && sk.includes('速攻')) { kill += 0.05 * amp; this.fireSkill(team, '速攻'); }
+      if ((choice === 'PIPE' || choice === 'RIGHT') && sk.includes('バックアタック')) {
+        kill += 0.1 * amp; this.fireSkill(team, 'バックアタック');
+      }
+      if (sk.includes('空中姿勢調整')) { err -= 0.05 * amp; this.fireSkill(team, '空中姿勢調整'); }
       // 強心臓: 終盤・ビハインドで真価
-      if (sk.includes('強心臓') && (this.score[team] >= this.targetPts - 5 || this.score[team] < this.score[defTeam]))
-        kill += 0.08 * amp;
+      if (sk.includes('強心臓') && (this.score[team] >= this.targetPts - 5 || this.score[team] < this.score[defTeam])) {
+        kill += 0.08 * amp; this.fireSkill(team, '強心臓');
+      }
       // シグネチャー・ムーブ（データの癖をプレーに反映）
       const sig = attacker.roster.signature;
-      if (sig === '爆発的パワー') kill += 0.05 * amp;
-      if (sig === '滞空マスター' && (choice === 'LEFT' || choice === 'RIGHT')) kill += 0.05 * amp;
+      if (sig === '爆発的パワー') { kill += 0.05 * amp; this.fireSkill(team, '爆発的パワー'); }
+      if (sig === '滞空マスター' && (choice === 'LEFT' || choice === 'RIGHT')) {
+        kill += 0.05 * amp; this.fireSkill(team, '滞空マスター');
+      }
       // 平行トス: ブロックが付きにくいが精度がシビア（POORでさらに崩れる）
       if (choice === 'PARA') {
         blocked -= 0.06;
@@ -1304,7 +1343,10 @@ export class VolleySim {
       err += Math.max(0, power - 0.82) * 0.6; // 強打しすぎはミス
       if (power < 0.3) {
         kill -= 0.12; // 弱すぎは拾われる
-        if (attacker.roster.skills.includes('フェイント')) kill += 0.1; // 軟打の名手
+        if (attacker.roster.skills.includes('フェイント')) {
+          kill += 0.1; // 軟打の名手
+          this.fireSkill(team, 'フェイント');
+        }
       }
     }
     this.spikeCtl = null;
@@ -1318,11 +1360,13 @@ export class VolleySim {
         if (attacker.roster.skills.includes('デッドエンド')) {
           kill += 0.15;
           blocked -= 0.08;
+          this.fireSkill(team, 'デッドエンド');
         }
         // 変幻自在: 読まれても打点でコースを変えてブロックを外す
         if (attacker.roster.skills.includes('変幻自在')) {
           kill += 0.12;
           blocked -= 0.06;
+          this.fireSkill(team, '変幻自在');
         }
       } else {
         blocked -= 0.07;
@@ -1331,9 +1375,15 @@ export class VolleySim {
     }
     // 守備側ブロッカーのスキル/シグネチャー
     const blockAmp = defFront.length ? Math.max(...defFront.map((p) => this.formAmp(p))) : 1;
-    if (this.teamHasSkill(defTeam, '鉄壁ウォール', true)) blocked += 0.06 * blockAmp;
-    if (defFront.some((p) => p.roster.signature === '鉄壁ウォール')) blocked += 0.05 * blockAmp;
-    if (defFront.some((p) => p.roster.signature === '高速リアクション')) blocked += 0.05 * blockAmp;
+    if (this.teamHasSkill(defTeam, 'リードブロック', true)) this.fireSkill(defTeam, 'リードブロック');
+    if (defFront.some((p) => p.roster.signature === '鉄壁ウォール')) {
+      blocked += 0.05 * blockAmp;
+      this.fireSkill(defTeam, '鉄壁ウォール');
+    }
+    if (defFront.some((p) => p.roster.signature === '高速リアクション')) {
+      blocked += 0.05 * blockAmp;
+      this.fireSkill(defTeam, '高速リアクション');
+    }
     // 戦術補正
     const atkTac = this.tactics[team];
     if (atkTac === 'aggressive') { kill += 0.05; err += 0.04; }

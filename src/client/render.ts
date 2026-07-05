@@ -785,6 +785,31 @@ export class GameRenderer {
     this.flashSpr.position.copy(pos ?? this.ball.position);
   }
 
+  // スキル発動: ボール位置からエネルギーリングが放射する
+  private skillRings: { mesh: THREE.Mesh; t: number; mine: boolean }[] = [];
+  skillBurst(mine: boolean) {
+    for (let k = 0; k < 2; k++) {
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(0.1, 0.34, 40),
+        new THREE.MeshBasicMaterial({
+          color: mine ? 0x8fe0ff : 0xff9090,
+          transparent: true,
+          opacity: 0.9,
+          side: THREE.DoubleSide,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      m.position.copy(this.ball.position);
+      m.rotation.x = -Math.PI / 2 + (k === 0 ? 0 : 0.9); // 1枚は水平、1枚は傾ける
+      this.scene.add(m);
+      this.skillRings.push({ mesh: m, t: -k * 0.12, mine });
+    }
+    this.flashT = 1;
+    this.flashSpr.position.copy(this.ball.position);
+    (this.flashSpr.material as THREE.SpriteMaterial).color.setHex(mine ? 0x8fe0ff : 0xff9090);
+  }
+
   // 明るい体育館の空色→白グラデ背景
   private skyGradient(): THREE.Texture {
     const c = document.createElement('canvas');
@@ -1453,6 +1478,23 @@ export class GameRenderer {
       this.trailLine.visible = true;
     } else {
       this.trailLine.visible = false;
+    }
+
+    // スキルのエネルギーリング（拡大しながらフェード）
+    for (let i = this.skillRings.length - 1; i >= 0; i--) {
+      const r = this.skillRings[i];
+      r.t += 0.045;
+      if (r.t < 0) continue;
+      const s = 1 + r.t * 14;
+      r.mesh.scale.set(s, s, 1);
+      r.mesh.rotation.z += 0.06;
+      (r.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.9 - r.t * 1.3);
+      if (r.t > 0.75) {
+        this.scene.remove(r.mesh);
+        (r.mesh.material as THREE.Material).dispose();
+        r.mesh.geometry.dispose();
+        this.skillRings.splice(i, 1);
+      }
     }
 
     // インパクト閃光

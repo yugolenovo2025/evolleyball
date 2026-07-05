@@ -725,6 +725,70 @@ button:active, .opt:active, .tactic-card:active { transform: scale(.97); }
 }
 
 /* 中央テロップ（結果テキストの単一レイヤー。実況テロップ風タイポグラフィ） */
+/* ---------- スキル発動の爽快エフェクト（オリジナルのエネルギー放射演出） ---------- */
+#skill-fx {
+  position: fixed; inset: 0; z-index: 26; pointer-events: none; display: none;
+}
+#skill-fx.show { display: block; }
+/* 画面フラッシュ */
+.sk-flash {
+  position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(ellipse at 50% 55%, rgba(255,255,255,.5), transparent 55%);
+}
+#skill-fx.mine .sk-flash { background: radial-gradient(ellipse at 50% 55%, rgba(120,220,255,.55), transparent 55%); }
+#skill-fx.opp .sk-flash { background: radial-gradient(ellipse at 50% 55%, rgba(255,120,120,.5), transparent 55%); }
+#skill-fx.play .sk-flash { animation: skFlash .5s ease-out; }
+@keyframes skFlash { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+/* 集中線（放射状ストリーク） */
+.sk-streaks {
+  position: absolute; inset: -20%; opacity: 0;
+  background: repeating-conic-gradient(from 0deg at 50% 55%,
+    rgba(255,255,255,.0) 0deg, rgba(255,255,255,.0) 3deg,
+    rgba(180,235,255,.35) 3.5deg, rgba(180,235,255,.0) 5deg);
+}
+#skill-fx.opp .sk-streaks {
+  background: repeating-conic-gradient(from 0deg at 50% 55%,
+    rgba(255,255,255,0) 0deg, rgba(255,255,255,0) 3deg,
+    rgba(255,180,180,.32) 3.5deg, rgba(255,180,180,0) 5deg);
+}
+#skill-fx.play .sk-streaks { animation: skStreak .7s ease-out; }
+@keyframes skStreak {
+  0% { opacity: 0; transform: scale(1.5) rotate(0deg); }
+  20% { opacity: .9; }
+  100% { opacity: 0; transform: scale(0.6) rotate(28deg); }
+}
+/* 中心のエネルギー爆発 */
+.sk-burst {
+  position: absolute; left: 50%; top: 55%; width: 40px; height: 40px;
+  transform: translate(-50%, -50%) scale(0); border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, #8fe0ff 40%, rgba(140,224,255,0) 72%);
+}
+#skill-fx.opp .sk-burst { background: radial-gradient(circle, #fff 0%, #ffb0b0 40%, rgba(255,176,176,0) 72%); }
+#skill-fx.play .sk-burst { animation: skBurst .55s cubic-bezier(.15,.9,.3,1); }
+@keyframes skBurst {
+  0% { transform: translate(-50%,-50%) scale(0); opacity: 1; }
+  60% { opacity: .9; }
+  100% { transform: translate(-50%,-50%) scale(11); opacity: 0; }
+}
+/* スキル名（斜めに勢いよく登場） */
+.sk-name {
+  position: absolute; left: 50%; top: 40%; transform: translate(-50%,-50%) skewX(-8deg) scale(.4);
+  font-size: clamp(30px, 7vw, 62px); font-weight: 900; font-style: italic; letter-spacing: 2px;
+  color: #fff; white-space: nowrap; opacity: 0;
+  -webkit-text-stroke: 2px #0a2740;
+  text-shadow: 0 0 18px #4dc3ff, 0 4px 0 #135, 0 6px 20px rgba(0,0,0,.6);
+}
+#skill-fx.opp .sk-name { -webkit-text-stroke: 2px #401010; text-shadow: 0 0 18px #ff6b6b, 0 4px 0 #511, 0 6px 20px rgba(0,0,0,.6); }
+#skill-fx.play .sk-name { animation: skName 1s cubic-bezier(.15,1.4,.35,1); }
+@keyframes skName {
+  0% { opacity: 0; transform: translate(-50%,-50%) skewX(-8deg) scale(.3); }
+  18% { opacity: 1; transform: translate(-50%,-50%) skewX(-8deg) scale(1.15); }
+  30% { transform: translate(-50%,-50%) skewX(-8deg) scale(1); }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-52%) skewX(-8deg) scale(1.05); }
+}
+@media (max-height: 500px) { .sk-name { font-size: clamp(24px, 6vw, 44px); } }
+
 #hud-center {
   position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
   font-size: 44px; font-weight: 900; font-style: italic; letter-spacing: 2px;

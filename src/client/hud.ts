@@ -46,6 +46,12 @@ export class Hud {
       <div id="hud-streak"></div>
       <div id="hud-center"></div>
       <div id="hud-toast"></div>
+      <div id="skill-fx">
+        <div class="sk-flash"></div>
+        <div class="sk-streaks"></div>
+        <div class="sk-burst"></div>
+        <div class="sk-name"></div>
+      </div>
       <div id="hud-panel"></div>
       <div id="ball-arrow">➤</div>
       <div id="bl-cluster">
@@ -758,6 +764,24 @@ export class Hud {
       : 'C:カメラ | P:ポーズ | H:操作説明';
   }
 
+  // スキル発動の爽快エフェクト（画面フラッシュ + エネルギー放射 + スキル名）
+  onSkill: ((name: string, mine: boolean) => void) | null = null;
+  private skillTimer: number | undefined;
+  private skillFx(name: string, mine: boolean) {
+    const fx = document.getElementById('skill-fx')!;
+    const nameEl = fx.querySelector<HTMLElement>('.sk-name')!;
+    nameEl.textContent = name;
+    fx.className = mine ? 'show mine' : 'show opp';
+    // アニメーション再トリガー
+    void fx.offsetWidth;
+    fx.classList.add('play');
+    clearTimeout(this.skillTimer);
+    this.skillTimer = window.setTimeout(() => {
+      fx.className = '';
+    }, 1100);
+    this.onSkill?.(name, mine);
+  }
+
   private toast(msg: string, cls = '') {
     this.toastEl.textContent = msg;
     this.toastEl.className = 'show ' + cls;
@@ -915,6 +939,11 @@ export class Hud {
       if (ev.seq <= this.lastEventSeq) continue;
       this.lastEventSeq = ev.seq;
       this.onSfx?.(ev.kind);
+      // スキル発動 → 爽快エフェクト + スキル名
+      if (ev.kind === 'skill' && ev.msg) {
+        this.skillFx(ev.msg, ev.team === myTeam);
+        continue;
+      }
       if (ev.team === myTeam) {
         if (ev.kind === 'contact') this.pulse(1);
         else if (ev.kind === 'toss' && ev.msg && TOSS_LABELS.includes(ev.msg)) this.pulse(2);

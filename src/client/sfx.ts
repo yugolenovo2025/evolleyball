@@ -252,6 +252,12 @@ export class Sfx {
         this.tone(1250, 0.045, 'sine', 0.07);
         this.tone(1650, 0.05, 'sine', 0.045, 0.015);
         break;
+      case 'skill': // スキル発動: 上昇する煌めき音
+        this.tone(520, 0.12, 'triangle', 0.1);
+        this.tone(780, 0.14, 'triangle', 0.1, 0.05);
+        this.tone(1170, 0.22, 'triangle', 0.09, 0.11);
+        this.tone(2400, 0.08, 'sine', 0.05, 0.11);
+        break;
       case 'heartbeat': // VAR 判定中の心拍
         this.tone(58, 0.14, 'sine', 0.4);
         this.tone(52, 0.12, 'sine', 0.3, 0.18);

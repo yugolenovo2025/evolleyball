@@ -130,6 +130,7 @@ export interface SimEvent {
     | 'fault'
     | 'toss'
     | 'var'
+    | 'skill' // スキル発動（msg=スキル名）: 画面演出用
     | 'matchOver';
   msg?: string;
   team?: Team;

@@ -238,6 +238,11 @@ function startGame(t: Transport) {
     else if (k === 'point' || k === 'ace') rumble(0.4, 130);
   };
   hud.onInput = (i) => transport?.send(i);
+  hud.onSkill = (_name, mine) => {
+    renderer?.skillBurst(mine);
+    renderer?.shake(mine ? 0.16 : 0.1);
+    if (mine) rumble(0.6, 120);
+  };
   hud.onToggleCam = () => renderer?.toggleCam();
   hud.onPause = togglePause;
   hud.onMenu = () => {
@@ -711,8 +716,8 @@ function showPrep(mode: 'solo' | 'mpHost' | 'mpGuest' = 'solo', t: Transport | n
   mpTransport = t;
   menu.style.display = 'none';
   document.getElementById('prep')!.style.display = 'flex';
-  candidates = SLOT_POS.map((pos) => generateCandidates(pos, 5));
-  liberoCands = generateCandidates('L', 5);
+  candidates = SLOT_POS.map((pos) => generateCandidates(pos, 10));
+  liberoCands = generateCandidates('L', 8);
   pickedLibero = -1;
   oppRoster = generateRoster(budget);
   autoAssign();
