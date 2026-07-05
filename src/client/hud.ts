@@ -134,6 +134,8 @@ export class Hud {
           <div id="stick-knob"></div>
         </div>
         <div id="stick-hint"><span>◀</span><i></i><span>▶</span><b>コース</b></div>
+        <div id="flick-guide"></div>
+        <div id="flick-hint"></div>
         <div id="btn-cam">視点</div>
       ` : ''}
     `;
@@ -275,16 +277,59 @@ export class Hud {
   private touchPos: { x: number; y: number; active: boolean } = { x: 0, y: 0, active: false };
 
   private setupZones() {
+    // 右ゾーン: タップ=通常アクション / 離す瞬間の“弾き”（フリック）で技を派生選択。
+    // 2ゾーンの操作感（狙って押さなくていい）はそのまま、eFootball風のフリック仕様を復活。
     const zr = document.getElementById('zone-r')!;
+    let rsx = 0;
+    let rsy = 0;
     zr.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       zr.setPointerCapture(e.pointerId);
+      rsx = e.clientX;
+      rsy = e.clientY;
       this.touchPos = { x: e.clientX, y: e.clientY, active: true };
       this.onInput?.({ type: 'actionDown' });
     });
     const up = (e: PointerEvent) => {
       e.preventDefault();
       this.touchPos.active = false;
+      const dx = e.clientX - rsx;
+      const dy = e.clientY - rsy;
+      let flick: 'U' | 'D' | 'L' | 'R' | null = null;
+      if (Math.hypot(dx, dy) > 24) {
+        flick = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : dy > 0 ? 'D' : 'U';
+      }
+      const mode = this.lastPromptMode;
+      if (flick && mode === 'set') {
+        // トス派生: ←クイック →時間差 ↑バック ↓ツー
+        const choice: AttackChoice =
+          flick === 'L' ? 'QUICK' : flick === 'R' ? 'PIPE' : flick === 'U' ? 'RIGHT' : 'TWO';
+        const lbl = { QUICK: 'クイック', PIPE: '時間差', RIGHT: 'バック', TWO: 'ツー' }[choice] ?? '';
+        this.onInput?.({ type: 'setChoice', choice });
+        this.flickHint(lbl);
+      } else if (flick && mode === 'spike') {
+        // スパイク派生: ↑ふわりフェイント ↓コントロール ←→ コース強打
+        if (flick === 'U') {
+          this.onInput?.({ type: 'spikePreset', power: 0.22 });
+          this.flickHint('フェイント');
+          return;
+        }
+        if (flick === 'D') {
+          this.onInput?.({ type: 'spikePreset', power: 0.55 });
+          this.flickHint('コントロール');
+          return;
+        }
+        if (flick === 'L') {
+          this.onInput?.({ type: 'aimSet', z: -0.9 });
+          this.flickHint('左コース');
+        } else if (flick === 'R') {
+          this.onInput?.({ type: 'aimSet', z: 0.9 });
+          this.flickHint('右コース');
+        }
+      } else if (flick && mode === 'serve') {
+        if (flick === 'L') this.onInput?.({ type: 'aimSet', z: -0.8 });
+        else if (flick === 'R') this.onInput?.({ type: 'aimSet', z: 0.8 });
+      }
       this.onInput?.({ type: 'actionUp' });
     };
     zr.addEventListener('pointerup', up);
@@ -335,6 +380,23 @@ export class Hud {
 
   private stickActive = false;
   private lastAimZ = 0;
+  private flickHintTimer: number | undefined;
+
+  // フリックで選んだ技名を親指の近くに一瞬だけ表示（操作の手応え）
+  private flickHint(text: string) {
+    const el = document.getElementById('flick-hint');
+    if (!el) return;
+    el.textContent = text;
+    const ax = this.touchPos.x || window.innerWidth * 0.72;
+    const ay = this.touchPos.y || window.innerHeight * 0.5;
+    el.style.left = `${ax}px`;
+    el.style.top = `${ay - 70}px`;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this.flickHintTimer);
+    this.flickHintTimer = window.setTimeout(() => el.classList.remove('show'), 650);
+  }
 
   // ゴーストリングとトスカードの毎フレーム更新（触れていない時は右中央に案内表示）
   private updateGhost(prompt: Prompt) {
@@ -347,11 +409,13 @@ export class Hud {
     const zoneL = document.getElementById('zone-l')!;
     const stickHint = document.getElementById('stick-hint')!;
 
+    const guide = document.getElementById('flick-guide')!;
     if (!prompt) {
       ghost.style.display = 'none';
       cards.style.display = 'none';
       zoneL.style.display = 'none';
       stickHint.style.display = 'none';
+      guide.style.display = 'none';
       document.getElementById('stick')!.style.display = 'none';
       this.stickActive = false;
       return;
@@ -362,6 +426,23 @@ export class Hud {
     const ay = this.touchPos.active ? this.touchPos.y : window.innerHeight * 0.58;
     ghost.style.left = `${ax}px`;
     ghost.style.top = `${ay}px`;
+
+    // フリック派生ガイド（右ゾーンを弾く方向で選べる技を提示）
+    if (prompt.mode === 'set' || prompt.mode === 'spike') {
+      const g =
+        prompt.mode === 'set'
+          ? { u: 'バック', d: 'ツー', l: 'クイック', r: '時間差' }
+          : { u: 'フェイント', d: '抑え', l: '左コース', r: '右コース' };
+      guide.innerHTML =
+        `<i class="fu">↑${g.u}</i><i class="fd">↓${g.d}</i>` +
+        `<i class="fl">←${g.l}</i><i class="fr">${g.r}→</i>` +
+        `<i class="fc">${prompt.mode === 'set' ? 'タップ=オープン' : 'タップ=通常'}</i>`;
+      guide.style.display = 'block';
+      guide.style.left = `${ax}px`;
+      guide.style.top = `${ay}px`;
+    } else {
+      guide.style.display = 'none';
+    }
 
     // 左スティック（コース/手の向きが効く局面のみ有効化）
     const aimable =
@@ -444,99 +525,8 @@ export class Hud {
     }
   }
 
-  // eFootball 式ジェスチャー判定: タップ / ダブルタップ / 4方向フリック
-  private padGesture(
-    id: string,
-    handlers: {
-      onDown?: () => void;
-      onUp: (g: { flick: 'U' | 'D' | 'L' | 'R' | null; double: boolean }) => void;
-    },
-  ) {
-    const el = document.getElementById(id)!;
-    let sx = 0;
-    let sy = 0;
-    let lastTap = 0;
-    el.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      el.setPointerCapture(e.pointerId);
-      sx = e.clientX;
-      sy = e.clientY;
-      handlers.onDown?.();
-    });
-    const finish = (e: PointerEvent) => {
-      e.preventDefault();
-      const dx = e.clientX - sx;
-      const dy = e.clientY - sy;
-      let flick: 'U' | 'D' | 'L' | 'R' | null = null;
-      if (Math.hypot(dx, dy) > 22) {
-        flick = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : dy > 0 ? 'D' : 'U';
-      }
-      const now = performance.now();
-      const double = !flick && now - lastTap < 280;
-      lastTap = flick ? 0 : now;
-      handlers.onUp({ flick, double });
-    };
-    el.addEventListener('pointerup', finish);
-    el.addEventListener('pointercancel', finish);
-  }
-
-  // 4方向バーチャルパッド（eFootball 配置: 左上=精密系 右上=攻撃系 左下=基本系 右下=構え系）
-  private setupPad() {
-    // 基本系（レシーブ/トス/ブロックジャンプ）
-    // トス中のフリック: 左=クイック 右=バック 上=時間差(パイプ) 下=ツーアタック
-    this.padGesture('pad-toss', {
-      onUp: ({ flick }) => {
-        if (this.lastPromptMode === 'set') {
-          if (flick === 'L') this.onInput?.({ type: 'setChoice', choice: 'QUICK' });
-          else if (flick === 'R') this.onInput?.({ type: 'setChoice', choice: 'RIGHT' });
-          else if (flick === 'U') this.onInput?.({ type: 'setChoice', choice: 'PIPE' });
-          else if (flick === 'D') this.onInput?.({ type: 'setChoice', choice: 'TWO' });
-        }
-        this.onInput?.({ type: 'actionDown' });
-        this.onInput?.({ type: 'actionUp' });
-      },
-    });
-    // 精密系（トス中のみ: タップ=オープン 上下=バック 左=クイック 右=時間差）
-    this.padGesture('pad-precise', {
-      onUp: ({ flick }) => {
-        if (this.lastPromptMode !== 'set') return;
-        const choice =
-          flick === 'U' || flick === 'D' ? 'RIGHT' : flick === 'L' ? 'QUICK' : flick === 'R' ? 'PIPE' : 'LEFT';
-        this.onInput?.({ type: 'setChoice', choice });
-        this.onInput?.({ type: 'actionDown' });
-        this.onInput?.({ type: 'actionUp' });
-      },
-    });
-    // 攻撃系（長押しチャージ→離す。フリック派生: 上=ふわりフェイント 下=コントロール 左右=コース強打）
-    this.padGesture('pad-spike', {
-      onDown: () => this.onInput?.({ type: 'actionDown' }),
-      onUp: ({ flick }) => {
-        if (this.lastPromptMode === 'spike') {
-          if (flick === 'U') {
-            this.onInput?.({ type: 'spikePreset', power: 0.22 });
-            return;
-          }
-          if (flick === 'D') {
-            this.onInput?.({ type: 'spikePreset', power: 0.55 });
-            return;
-          }
-          if (flick === 'L') this.onInput?.({ type: 'aimSet', z: -0.9 });
-          if (flick === 'R') this.onInput?.({ type: 'aimSet', z: 0.9 });
-        } else if (this.lastPromptMode === 'serve') {
-          if (flick === 'L') this.onInput?.({ type: 'aimSet', z: -0.8 });
-          if (flick === 'R') this.onInput?.({ type: 'aimSet', z: 0.8 });
-        }
-        this.onInput?.({ type: 'actionUp' });
-      },
-    });
-    // 構え系（ブロックの手の向き: タップ=中央 左右フリック=左右）
-    this.padGesture('pad-dash', {
-      onUp: ({ flick }) => {
-        const zone = flick === 'L' ? 'L' : flick === 'R' ? 'R' : 'M';
-        this.onInput?.({ type: 'blockCommit', zone });
-      },
-    });
-  }
+  // （旧4ボタン仮想パッド setupPad/padGesture は 2ゾーン方式へ統合したため撤去。
+  //  フリック派生ロジックは setupZones の右ゾーン pointerup に移設済み。）
 
   private lastVarCount = -1;
   private varResultShown = false;

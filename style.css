@@ -465,6 +465,38 @@ button:active, .opt:active, .tactic-card:active { transform: scale(.97); }
 @keyframes hintPulse { 0%, 100% { opacity: .4; } 50% { opacity: .8; } }
 #hud.touch #gauge { display: none !important; } /* ゲージはゴーストリングが兼ねる */
 
+/* 右ゾーンのフリック派生ガイド（十字方向に技名を配置） */
+#flick-guide {
+  position: fixed; display: none; z-index: 6; pointer-events: none;
+  width: 0; height: 0; transform: translate(-50%, -50%); opacity: .8;
+}
+#flick-guide i {
+  position: absolute; white-space: nowrap; font-style: normal; font-weight: 800;
+  font-size: 12px; color: #dff0ff; letter-spacing: 1px;
+  text-shadow: 0 1px 3px #000, 0 0 6px rgba(0,0,0,.6); transform: translate(-50%, -50%);
+}
+#flick-guide .fu { top: -70px; left: 0; }
+#flick-guide .fd { top: 70px; left: 0; }
+#flick-guide .fl { top: 0; left: -74px; }
+#flick-guide .fr { top: 0; left: 74px; }
+#flick-guide .fc { top: 96px; left: 0; font-size: 10px; color: #9fb6cc; opacity: .8; }
+/* フリックで確定した技名のポップ */
+#flick-hint {
+  position: fixed; display: none; z-index: 27; pointer-events: none;
+  transform: translate(-50%, -50%) scale(.7); opacity: 0;
+  padding: 5px 14px; border-radius: 4px; white-space: nowrap;
+  font-weight: 900; font-size: 17px; color: #06202f;
+  background: linear-gradient(180deg, #bfefff, #6fd4ff);
+  box-shadow: 0 3px 10px rgba(0,0,0,.5), 0 0 0 2px rgba(255,255,255,.5) inset;
+}
+#flick-hint.show { display: block; animation: flickPop .65s cubic-bezier(.2,1.3,.4,1); }
+@keyframes flickPop {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(.6); }
+  20% { opacity: 1; transform: translate(-50%,-60%) scale(1.05); }
+  70% { opacity: 1; transform: translate(-50%,-64%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%,-72%) scale(1); }
+}
+
 /* アウェイ戦: UIが微かに揺れて「集中しづらさ」を演出 */
 @keyframes awayJitter {
   0%, 92%, 100% { transform: translate(0, 0); }
