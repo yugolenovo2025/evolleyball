@@ -1,0 +1,15 @@
+# Render.com 用デプロイ設定（無料プラン・WebSocket対応）
+# Render がこのリポジトリを取り込むと自動でこの設定を読み、ビルド＆起動する。
+services:
+  - type: web
+    name: evolleyball
+    runtime: node
+    plan: free
+    # ビルド: devDependencies(vite/tsc) を含めてインストール → 本番ビルド
+    buildCommand: npm install --include=dev && npm run build
+    # 起動: HTTP(dist配信) と WebSocket を同一ポートで待受（PORTはRenderが注入）
+    startCommand: npm run start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

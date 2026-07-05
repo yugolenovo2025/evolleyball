@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>eVolleyball</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <canvas id="game" style="display:none"></canvas>
+
+  <!-- 起動スプラッシュ（自作アセット。豪華な集合ビジュアル + 中央トロフィー） -->
+  <div id="splash">
+    <div class="sp-bg"></div>
+    <div class="sp-players sp-left"></div>
+    <div class="sp-players sp-right"></div>
+    <div class="sp-center">
+      <svg class="sp-trophy" viewBox="0 0 120 200" aria-hidden="true">
+        <defs>
+          <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#fff6c8"/>
+            <stop offset="0.4" stop-color="#f5cf4e"/>
+            <stop offset="0.7" stop-color="#c8971f"/>
+            <stop offset="1" stop-color="#8a6410"/>
+          </linearGradient>
+        </defs>
+        <!-- 台座 -->
+        <rect x="42" y="176" width="36" height="12" rx="2" fill="url(#gold)"/>
+        <rect x="48" y="164" width="24" height="14" fill="url(#gold)"/>
+        <!-- カップ本体 -->
+        <path d="M30 44 H90 V70 Q90 128 60 150 Q30 128 30 70 Z" fill="url(#gold)"/>
+        <!-- 取っ手 -->
+        <path d="M30 52 Q6 56 14 92 Q20 110 34 104" fill="none" stroke="url(#gold)" stroke-width="7"/>
+        <path d="M90 52 Q114 56 106 92 Q100 110 86 104" fill="none" stroke="url(#gold)" stroke-width="7"/>
+        <!-- バレーボール -->
+        <circle cx="60" cy="40" r="26" fill="#fff"/>
+        <path d="M60 14 Q60 40 44 62 M60 14 Q60 40 76 62 M34 32 Q60 40 86 32" stroke="#2f7bd6" stroke-width="3.5" fill="none"/>
+        <text x="60" y="108" text-anchor="middle" font-size="30" font-weight="900" fill="#7a5410" font-family="sans-serif">eV</text>
+      </svg>
+      <div class="sp-title">eVolleyball</div>
+      <div class="sp-year">2026</div>
+    </div>
+    <div class="sp-start">TAP TO START</div>
+    <div class="sp-foot">© 2026 eVolleyball</div>
+  </div>
+
+  <div id="menu" style="display:none">
+    <h1>eVolleyball</h1>
+    <p class="tagline">司令塔の一瞬が、勝敗を決める。— 6人制バレーボール</p>
+
+    <div class="menu-buttons">
+      <button id="btn-solo">試合をはじめる（vs AI）</button>
+      <button id="btn-watch">AI 観戦デモ</button>
+    </div>
+
+    <div class="mp-box">
+      <h2>2人マルチプレイ</h2>
+      <label>サーバーアドレス <small>（通常は空欄でOK）</small>
+        <input id="server-addr" placeholder="空欄＝このサイトのサーバー" />
+      </label>
+      <div class="mp-row">
+        <button id="btn-host">部屋を作る（ホスト）</button>
+      </div>
+      <div class="mp-row">
+        <input id="room-code" placeholder="ルームコード" maxlength="4" />
+        <button id="btn-join">参加する</button>
+      </div>
+      <p class="note">ホストが「部屋を作る」→ 表示されるルームコードを相手に伝え、<br>
+      相手はコードを入れて「参加する」だけ。相手が来るまでは AI が代行します。</p>
+    </div>
+    <p id="menu-status"></p>
+  </div>
+
+  <!-- 選手契約 & チーム編成（eFootball のフォーメーション画面準拠） -->
+  <div id="prep" style="display:none">
+    <div id="prep-top">
+      <div id="budget-row">
+        <span class="bt-label">予算</span>
+        <div class="budget-pick sel" data-budget="120">低 120</div>
+        <div class="budget-pick" data-budget="155">中 155</div>
+        <div class="budget-pick" data-budget="190">高 190</div>
+      </div>
+      <div id="capbar-wrap">
+        <div id="capbar"><div id="capbar-fill"></div></div>
+        <span id="cap-text">0 / 150</span>
+      </div>
+      <div id="tactic-row">
+        <div class="tactic-card sel" data-tactic="balanced">バランス</div>
+        <div class="tactic-card" data-tactic="aggressive">攻撃的</div>
+        <div class="tactic-card" data-tactic="defensive">堅守</div>
+      </div>
+      <div id="len-row">
+        <span class="bt-label">試合</span>
+        <div class="len-pick sel" data-pts="25">25点</div>
+        <div class="len-pick" data-pts="15">15点</div>
+        <span class="len-sep"></span>
+        <div class="len-pick sel" data-sets="1">1set</div>
+        <div class="len-pick" data-sets="3">3set</div>
+        <div class="len-pick" data-sets="5">5set</div>
+      </div>
+    </div>
+    <div id="prep-mid">
+      <div id="prep-court">
+        <div class="pc-head"><span>5-1 ローテーション</span><span id="pc-style">サイドアウト重視</span></div>
+        <div id="court-cards"></div>
+      </div>
+      <aside id="prep-right">
+        <div class="tp-label">チームパワー</div>
+        <div id="team-power">0</div>
+        <div class="tp-label">相手のコスト配分（スカウティング）</div>
+        <div id="opp-graph"></div>
+        <div class="tp-label">マッチアップ相性</div>
+        <div id="matchup"></div>
+        <button id="btn-auto">自動配置</button>
+      </aside>
+    </div>
+    <div id="prep-bottom">
+      <button id="btn-back">‹ 戻る</button>
+      <button id="btn-kickoff">試合へ ›</button>
+    </div>
+    <!-- 候補選手ピッカー -->
+    <div id="picker" style="display:none">
+      <div id="picker-card">
+        <div id="picker-title"></div>
+        <div id="picker-list"></div>
+        <button id="picker-close">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 試合後アナリティクス・ダッシュボード -->
+  <div id="dash" style="display:none">
+    <div id="dash-card">
+      <h2 id="dash-title">本日のデータ・インサイト</h2>
+      <div id="dash-mvp"></div>
+      <div id="dash-table"></div>
+      <button id="dash-close">メニューへ</button>
+    </div>
+  </div>
+
+  <div id="rotate-hint">📱 横向きにすると遊びやすいです</div>
+
+  <script type="module" src="/src/client/main.ts"></script>
+</body>
+</html>
