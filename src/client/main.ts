@@ -220,6 +220,7 @@ function startGame(t: Transport) {
   transport = t;
   menu.style.display = 'none';
   canvas.style.display = 'block';
+  document.body.classList.add('in-game'); // シネマティックなビネット/色収差オーバーレイを有効化
   renderer = new GameRenderer(canvas);
   renderer.setMyTeam(t.myTeam);
   hud = new Hud(isTouch, t instanceof LocalTransport);
@@ -240,8 +241,8 @@ function startGame(t: Transport) {
   hud.onInput = (i) => transport?.send(i);
   hud.onSkill = (_name, mine) => {
     renderer?.skillBurst(mine);
-    renderer?.shake(mine ? 0.16 : 0.1);
-    if (mine) rumble(0.6, 120);
+    renderer?.shake(mine ? 0.07 : 0.04); // 控えめ: 視界が揺れてプレイを妨げないよう弱める
+    if (mine) rumble(0.35, 70);
   };
   hud.onToggleCam = () => renderer?.toggleCam();
   hud.onPause = togglePause;

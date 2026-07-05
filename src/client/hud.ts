@@ -778,7 +778,7 @@ export class Hud {
     clearTimeout(this.skillTimer);
     this.skillTimer = window.setTimeout(() => {
       fx.className = '';
-    }, 1100);
+    }, 900);
     this.onSkill?.(name, mine);
   }
 

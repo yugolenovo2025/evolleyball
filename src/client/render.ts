@@ -77,22 +77,41 @@ function ballTexture(): THREE.CanvasTexture {
 
 // 名前 + 背番号/ロールの2段ラベル
 function makeLabel(name: string, sub: string, color: string): THREE.Sprite {
+  // eFootball風の名前タグ: 黒い座布団(半透明タブ) + シアンのアンダーライン
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 128;
   const g = c.getContext('2d')!;
   g.textAlign = 'center';
-  g.strokeStyle = 'rgba(0,0,0,0.75)';
-  g.lineWidth = 7;
-  g.font = 'bold 44px sans-serif';
+  // 黒タブ（角丸の帯）
+  const bx = 20, by = 18, bw = 216, bh = 84, r = 12;
+  g.fillStyle = 'rgba(6,12,20,0.72)';
+  g.beginPath();
+  g.moveTo(bx + r, by);
+  g.arcTo(bx + bw, by, bx + bw, by + bh, r);
+  g.arcTo(bx + bw, by + bh, bx, by + bh, r);
+  g.arcTo(bx, by + bh, bx, by, r);
+  g.arcTo(bx, by, bx + bw, by, r);
+  g.closePath();
+  g.fill();
+  // シアンのアンダーライン（発光風のグラデ）
+  const ug = g.createLinearGradient(bx, 0, bx + bw, 0);
+  ug.addColorStop(0, 'rgba(77,195,255,0)');
+  ug.addColorStop(0.5, 'rgba(120,225,255,1)');
+  ug.addColorStop(1, 'rgba(77,195,255,0)');
+  g.fillStyle = ug;
+  g.fillRect(bx + 6, by + bh - 6, bw - 12, 4);
+  // 名前
+  g.font = 'bold 42px "Segoe UI", sans-serif';
   g.fillStyle = color;
-  g.strokeText(name, 128, 48);
-  g.fillText(name, 128, 48);
-  g.font = 'bold 26px sans-serif';
-  g.fillStyle = '#c8d6e4';
-  g.lineWidth = 5;
-  g.strokeText(sub, 128, 92);
-  g.fillText(sub, 128, 92);
+  g.shadowColor = 'rgba(0,0,0,0.85)';
+  g.shadowBlur = 4;
+  g.fillText(name, 128, 52);
+  g.shadowBlur = 0;
+  // サブ（ポジション #番号）
+  g.font = 'bold 24px "Segoe UI", sans-serif';
+  g.fillStyle = '#a9c6dd';
+  g.fillText(sub, 128, 86);
   const tex = new THREE.CanvasTexture(c);
   const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
   const s = new THREE.Sprite(mat);
@@ -210,6 +229,71 @@ function numberTexture(num: number): THREE.CanvasTexture {
   return new THREE.CanvasTexture(c);
 }
 
+// オリジナルのチームエンブレム（盾型クレスト）。実在ロゴは使わず幾何学模様で生成。
+const CREST_COLORS = [
+  ['#ffd34d', '#0b2a6b'], // team0: ゴールド×ネイビー
+  ['#e8eef6', '#8a1220'], // team1: シルバー×クリムゾン
+];
+function crestTexture(team: number): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  const [fg, bg] = CREST_COLORS[team % CREST_COLORS.length];
+  // 盾のシルエット
+  g.fillStyle = bg;
+  g.beginPath();
+  g.moveTo(10, 8);
+  g.lineTo(54, 8);
+  g.lineTo(54, 38);
+  g.quadraticCurveTo(54, 54, 32, 60);
+  g.quadraticCurveTo(10, 54, 10, 38);
+  g.closePath();
+  g.fill();
+  g.lineWidth = 3;
+  g.strokeStyle = fg;
+  g.stroke();
+  // 中央のV字（ボレー/スパイクを象徴）
+  g.strokeStyle = fg;
+  g.lineWidth = 5;
+  g.beginPath();
+  g.moveTo(20, 20);
+  g.lineTo(32, 44);
+  g.lineTo(44, 20);
+  g.stroke();
+  // 上部の星
+  g.fillStyle = fg;
+  g.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+    const r = i % 1 === 0 ? 5 : 2;
+    g.lineTo(32 + Math.cos(a) * r, 15 + Math.sin(a) * r);
+  }
+  g.closePath();
+  g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// スポンサーの帯（架空ブランドのワードマーク）。胸の背番号下に貼る。
+function sponsorTexture(team: number): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 32;
+  const g = c.getContext('2d')!;
+  const brands = ['VOLTEC', 'AERO+', 'KINETIQ', 'NOVAX'];
+  const txt = brands[team % brands.length];
+  g.font = '900 22px "Segoe UI", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(255,255,255,0.92)';
+  g.fillText(txt, 64, 17);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 // ローポリ人型選手を組み立てる（肘・首・背番号・接地影つき）
 function buildPlayer(p: PlayerSnap, idx: number): PlayerParts {
   const jersey = new THREE.MeshStandardMaterial({ color: TEAM_JERSEY[p.team], roughness: 0.7 });
@@ -315,6 +399,21 @@ function buildPlayer(p: PlayerSnap, idx: number): PlayerParts {
     body.add(plane);
   }
 
+  // チームエンブレム（右胸）— item 21
+  const crest = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.075, 0.075),
+    new THREE.MeshBasicMaterial({ map: crestTexture(p.team), transparent: true }),
+  );
+  crest.position.set(0.1, 1.34, 0.146);
+  body.add(crest);
+  // スポンサーワードマーク（胸中央、背番号の下）— item 21
+  const spon = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.17, 0.043),
+    new THREE.MeshBasicMaterial({ map: sponsorTexture(p.team), transparent: true }),
+  );
+  spon.position.set(0, 1.14, 0.15);
+  body.add(spon);
+
   // 腕: 肩グループ → 上腕 → 肘グループ → 前腕 + 手
   // リーチは 0.36+0.36+手 = 約0.78。肩(1.28)+リーチ = 2.06 が頭上到達点で、
   // シム側の打点計算 (2.06×身長+ジャンプ) と一致し、手とボールが必ず接触する
@@ -327,6 +426,10 @@ function buildPlayer(p: PlayerSnap, idx: number): PlayerParts {
     const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.052, 0.14, 16), jersey);
     sleeve.position.y = -0.07;
     sh.add(sleeve);
+    // 袖口のトリムライン（ユニフォームのディテール）— item 21
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.0535, 0.052, 0.028, 16), trim);
+    cuff.position.y = -0.132;
+    sh.add(cuff);
     const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.28, 5, 16), skin);
     upper.position.y = -0.22;
     sh.add(upper);
@@ -551,6 +654,12 @@ export class GameRenderer {
   private camPos = new THREE.Vector3(-12, 4, 0);
   private lookPos = new THREE.Vector3(0, 1, 0);
   private tacticalT = 0; // セット機会の広角タクティカル・ビュー (0..1)
+  private netPlane!: THREE.Mesh; // item 20: 揺れるネット
+  private netBaseZ!: Float32Array; // ネット頂点の初期位置
+  private netHitT = 0; // ネットにボールが当たった時の揺れ強度
+  private netHitZ = 0; // 接触点（ネット長手方向）
+  private netHitDir = 1; // たわみの向き（ボールが来た側）
+  private banners: { mesh: THREE.Mesh; base: Float32Array; phase: number }[] = []; // item 20: なびく布
   private optSprites: THREE.Sprite[] = [];
   private trailPts: THREE.Vector3[] = [];
   private trailFresh = false;
@@ -596,9 +705,25 @@ export class GameRenderer {
     fill.position.set(-8, 10, -6);
     this.scene.add(fill);
 
+    // item 20: 環境反射（空グラデをPMREM化）— 床や選手にうっすら映り込みを与える
+    try {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      const envScene = new THREE.Scene();
+      envScene.background = this.skyGradient();
+      this.scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+    } catch {
+      /* 環境反射は装飾なので失敗しても続行 */
+    }
+
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(24, 15),
-      new THREE.MeshStandardMaterial({ map: courtTexture(), roughness: 0.72, metalness: 0.04 }),
+      // 磨かれた体育館床: 光沢を上げて照明と観客がうっすら映り込む
+      new THREE.MeshStandardMaterial({
+        map: courtTexture(),
+        roughness: 0.4,
+        metalness: 0.22,
+        envMapIntensity: 0.6,
+      }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -614,10 +739,14 @@ export class GameRenderer {
       side: THREE.DoubleSide,
       alphaTest: 0.05,
     });
-    const netPlane = new THREE.Mesh(new THREE.PlaneGeometry(COURT_HALF_Z * 2 + 1, 1), netMat);
+    // item 20: ネットを分割メッシュにして布のように揺らす
+    const netGeo = new THREE.PlaneGeometry(COURT_HALF_Z * 2 + 1, 1, 20, 6);
+    this.netBaseZ = (netGeo.attributes.position.array as Float32Array).slice();
+    const netPlane = new THREE.Mesh(netGeo, netMat);
     netPlane.rotation.y = Math.PI / 2;
     netPlane.position.set(0, NET_HEIGHT - 0.5, 0);
     this.scene.add(netPlane);
+    this.netPlane = netPlane;
     // 上帯（大会名入り）
     const band = new THREE.Mesh(
       new THREE.PlaneGeometry(COURT_HALF_Z * 2 + 1, 0.1),
@@ -662,7 +791,7 @@ export class GameRenderer {
     );
     this.trajLine = new THREE.Line(
       trajGeo,
-      new THREE.LineBasicMaterial({ color: 0xffd034, transparent: true, opacity: 0.5 }),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
     );
     this.trajLine.visible = false;
     this.scene.add(this.trajLine);
@@ -788,26 +917,22 @@ export class GameRenderer {
   // スキル発動: ボール位置からエネルギーリングが放射する
   private skillRings: { mesh: THREE.Mesh; t: number; mine: boolean }[] = [];
   skillBurst(mine: boolean) {
-    for (let k = 0; k < 2; k++) {
-      const m = new THREE.Mesh(
-        new THREE.RingGeometry(0.1, 0.34, 40),
-        new THREE.MeshBasicMaterial({
-          color: mine ? 0x8fe0ff : 0xff9090,
-          transparent: true,
-          opacity: 0.9,
-          side: THREE.DoubleSide,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        }),
-      );
-      m.position.copy(this.ball.position);
-      m.rotation.x = -Math.PI / 2 + (k === 0 ? 0 : 0.9); // 1枚は水平、1枚は傾ける
-      this.scene.add(m);
-      this.skillRings.push({ mesh: m, t: -k * 0.12, mine });
-    }
-    this.flashT = 1;
-    this.flashSpr.position.copy(this.ball.position);
-    (this.flashSpr.material as THREE.SpriteMaterial).color.setHex(mine ? 0x8fe0ff : 0xff9090);
+    // 控えめ: エネルギーリング1枚だけ、プレイの視界を塞がない小さめの放射
+    const m = new THREE.Mesh(
+      new THREE.RingGeometry(0.1, 0.26, 36),
+      new THREE.MeshBasicMaterial({
+        color: mine ? 0x8fe0ff : 0xff9090,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    m.position.copy(this.ball.position);
+    m.rotation.x = -Math.PI / 2;
+    this.scene.add(m);
+    this.skillRings.push({ mesh: m, t: 0, mine });
   }
 
   // 明るい体育館の空色→白グラデ背景
@@ -829,8 +954,8 @@ export class GameRenderer {
 
   // スタジアム環境: 観客席・群衆・LED広告・照明コーン・センターロゴ
   private buildStadium() {
-    // 観客スタンド（両サイドの段々）
-    const standMat = new THREE.MeshStandardMaterial({ color: 0x141c29, roughness: 0.95 });
+    // 観客スタンド（両サイドの段々）— 明るい背景から浮かないよう中間色に引き上げる
+    const standMat = new THREE.MeshStandardMaterial({ color: 0x3d5170, roughness: 0.9 });
     for (const side of [-1, 1]) {
       for (let row = 0; row < 6; row++) {
         const step = new THREE.Mesh(new THREE.BoxGeometry(34, 0.9, 1.7), standMat);
@@ -840,7 +965,7 @@ export class GameRenderer {
       // 手すり壁
       const wall = new THREE.Mesh(
         new THREE.BoxGeometry(34, 1.0, 0.15),
-        new THREE.MeshStandardMaterial({ color: 0x1d2c42, roughness: 0.8 }),
+        new THREE.MeshStandardMaterial({ color: 0x4a5f82, roughness: 0.75 }),
       );
       wall.position.set(0, 0.5, side * 7.7);
       this.scene.add(wall);
@@ -851,7 +976,10 @@ export class GameRenderer {
     const COUNT = 2200;
     const crowd = new THREE.InstancedMesh(crowdGeo, crowdMat, COUNT);
     const m = new THREE.Matrix4();
-    const palette = [0x3a4d6b, 0x6b3a3a, 0x4d6b3a, 0x6b5f3a, 0x4a3a6b, 0x9aa4b5, 0x2d6cdf, 0xd94040];
+    const palette = [
+      0x6f86ad, 0xb85757, 0x6fa257, 0xb89a57, 0x7a63ad, 0xc3cede,
+      0x3d84ff, 0xff5b5b, 0xffc24d, 0x4dd0c0, 0xe0e6ef, 0xff8fb0,
+    ];
     for (let i = 0; i < COUNT; i++) {
       const side = i % 2 === 0 ? 1 : -1;
       const row = Math.floor(Math.random() * 6);
@@ -873,6 +1001,31 @@ export class GameRenderer {
       );
       blueBand.position.set(0, 6.1, side * 17.6);
       this.scene.add(blueBand);
+    }
+
+    // item 20: 応援バナー（布のなびき）。スタンド手前に何枚か吊るして風に揺らす
+    const bannerCols = [0x2d6cdf, 0xd94040, 0xffc24d, 0x27a567];
+    let bi = 0;
+    for (const side of [-1, 1]) {
+      for (const bx of [-11, -3.5, 4, 11]) {
+        const bgeo = new THREE.PlaneGeometry(2.4, 1.1, 10, 5);
+        const banner = new THREE.Mesh(
+          bgeo,
+          new THREE.MeshStandardMaterial({
+            color: bannerCols[bi % bannerCols.length],
+            roughness: 0.85,
+            side: THREE.DoubleSide,
+          }),
+        );
+        banner.position.set(bx, 2.1, side * 7.55);
+        this.scene.add(banner);
+        this.banners.push({
+          mesh: banner,
+          base: (bgeo.attributes.position.array as Float32Array).slice(),
+          phase: bi * 1.3,
+        });
+        bi++;
+      }
     }
 
     // LED 広告看板（eFootball の PLAY CRAZY 風マゼンタ基調。スクロールで光る）
@@ -1439,9 +1592,10 @@ export class GameRenderer {
       // eFootball 風: 操作選手の後方上空から、ボールとネット方向を捉える
       // タクティカル・ビュー中はさらに引いて高く（攻撃陣全体を見せる）
       const netDir = this.myTeam === 0 ? 1 : -1;
+      // item 18: 選手のディテールが映えるよう通常時はやや寄せる（タクティカル時は従来通り引く）
       const desired = new THREE.Vector3(
-        anchor.x - netDir * (5.8 + this.tacticalT * 2.6),
-        3.6 + this.tacticalT * 1.9,
+        anchor.x - netDir * (4.7 + this.tacticalT * 3.7),
+        3.1 + this.tacticalT * 2.4,
         anchor.z * (0.8 - this.tacticalT * 0.35),
       );
       this.camPos.lerp(desired, 0.07);
@@ -1465,6 +1619,48 @@ export class GameRenderer {
     // LED 広告のスクロール
     for (const tex of this.adTextures) tex.offset.x -= 0.0016;
 
+    // item 20: ネットの揺れ（アイドルの微風 + ボール接触時のたわみ）
+    {
+      const bp = this.ball.position;
+      if (Math.abs(bp.x) < 0.4 && bp.y < NET_HEIGHT + 0.15 && bp.y > 0.25) {
+        this.netHitT = Math.min(1, this.netHitT + 0.6);
+        this.netHitZ = bp.z;
+        if (Math.abs(bp.x) > 0.02) this.netHitDir = Math.sign(bp.x);
+      }
+      this.netHitT *= 0.9;
+      const attr = this.netPlane.geometry.attributes.position;
+      const arr = attr.array as Float32Array;
+      const base = this.netBaseZ;
+      for (let i = 0; i < attr.count; i++) {
+        const bx = base[i * 3]; // 長手方向（world z）
+        const by = base[i * 3 + 1]; // 高さ（上端 +0.5 は帯に固定）
+        const freedom = 0.5 - by; // 下端ほど自由に揺れる
+        const idle = Math.sin(this.clockT * 2.0 + bx * 1.4) * 0.01 * freedom;
+        const d = bx - this.netHitZ;
+        const hit = Math.exp(-d * d * 1.3) * this.netHitT * 0.3 * freedom * this.netHitDir;
+        arr[i * 3 + 2] = idle + hit;
+      }
+      attr.needsUpdate = true;
+    }
+
+    // item 20: 応援バナーの布なびき（波打ち）
+    for (const bn of this.banners) {
+      const attr = bn.mesh.geometry.attributes.position;
+      const arr = attr.array as Float32Array;
+      const base = bn.base;
+      for (let i = 0; i < attr.count; i++) {
+        const vx = base[i * 3];
+        const vy = base[i * 3 + 1];
+        // 上端は吊り下げで固定、下ほど大きくなびく
+        const freedom = (1.1 / 2 - vy) / 1.1; // 0(上)..1(下)
+        const w =
+          Math.sin(this.clockT * 3 + vx * 2.2 + bn.phase) * 0.09 * freedom +
+          Math.sin(this.clockT * 4.7 + vy * 3 + bn.phase) * 0.03;
+        arr[i * 3 + 2] = w;
+      }
+      attr.needsUpdate = true;
+    }
+
     // スイングトレイルの更新（新規点が無ければ減衰して消える）
     if (!this.trailFresh && this.trailPts.length > 0) this.trailPts.splice(0, 2);
     this.trailFresh = false;
@@ -1483,13 +1679,13 @@ export class GameRenderer {
     // スキルのエネルギーリング（拡大しながらフェード）
     for (let i = this.skillRings.length - 1; i >= 0; i--) {
       const r = this.skillRings[i];
-      r.t += 0.045;
+      r.t += 0.06;
       if (r.t < 0) continue;
-      const s = 1 + r.t * 14;
+      const s = 1 + r.t * 6; // 控えめ: 大きく広げず素早く収束
       r.mesh.scale.set(s, s, 1);
-      r.mesh.rotation.z += 0.06;
-      (r.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.9 - r.t * 1.3);
-      if (r.t > 0.75) {
+      r.mesh.rotation.z += 0.05;
+      (r.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.55 - r.t * 1.1);
+      if (r.t > 0.5) {
         this.scene.remove(r.mesh);
         (r.mesh.material as THREE.Material).dispose();
         r.mesh.geometry.dispose();

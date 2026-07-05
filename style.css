@@ -9,6 +9,25 @@ body {
   color: #eef2f6; letter-spacing: 0.015em; line-height: 1.5;
 }
 canvas#game { display: block; width: 100%; height: 100%; touch-action: none; }
+
+/* シネマティック後処理の軽量近似（DoF/色収差）: プレイ中のみ表示 */
+#fx-cine { position: fixed; inset: 0; z-index: 5; pointer-events: none; display: none; }
+body.in-game #fx-cine { display: block; }
+/* 周辺減光ビネット（中央のプレイに視線を集める＝擬似DoF） */
+.fx-vig {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 78% 74% at 50% 46%,
+    rgba(0,0,0,0) 55%, rgba(0,0,0,0.10) 78%, rgba(4,8,14,0.34) 100%);
+}
+/* エッジのわずかな色収差フリンジ（四隅にシアン/レッドのにじみ） */
+.fx-ca {
+  position: absolute; inset: 0; mix-blend-mode: screen; opacity: 0.5;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(0,180,255,0.10), transparent 22%),
+    radial-gradient(circle at 100% 100%, rgba(255,70,90,0.10), transparent 22%),
+    radial-gradient(circle at 100% 0%, rgba(0,180,255,0.08), transparent 20%),
+    radial-gradient(circle at 0% 100%, rgba(255,70,90,0.08), transparent 20%);
+}
 #menu input, #menu button { touch-action: auto; -webkit-user-select: auto; user-select: auto; }
 
 /* ---------- 起動スプラッシュ ---------- */
@@ -725,69 +744,43 @@ button:active, .opt:active, .tactic-card:active { transform: scale(.97); }
 }
 
 /* 中央テロップ（結果テキストの単一レイヤー。実況テロップ風タイポグラフィ） */
-/* ---------- スキル発動の爽快エフェクト（オリジナルのエネルギー放射演出） ---------- */
+/* ---------- スキル発動エフェクト（控えめ版: プレイ画面を覆わない） ---------- */
+/* 画面中央〜プレイエリアは塞がず、上寄りにコンパクトなバナーで見せる */
 #skill-fx {
-  position: fixed; inset: 0; z-index: 26; pointer-events: none; display: none;
+  position: fixed; top: 16%; left: 50%; transform: translateX(-50%);
+  z-index: 26; pointer-events: none; display: none;
 }
 #skill-fx.show { display: block; }
-/* 画面フラッシュ */
-.sk-flash {
-  position: absolute; inset: 0; opacity: 0;
-  background: radial-gradient(ellipse at 50% 55%, rgba(255,255,255,.5), transparent 55%);
-}
-#skill-fx.mine .sk-flash { background: radial-gradient(ellipse at 50% 55%, rgba(120,220,255,.55), transparent 55%); }
-#skill-fx.opp .sk-flash { background: radial-gradient(ellipse at 50% 55%, rgba(255,120,120,.5), transparent 55%); }
-#skill-fx.play .sk-flash { animation: skFlash .5s ease-out; }
-@keyframes skFlash { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
-/* 集中線（放射状ストリーク） */
-.sk-streaks {
-  position: absolute; inset: -20%; opacity: 0;
-  background: repeating-conic-gradient(from 0deg at 50% 55%,
-    rgba(255,255,255,.0) 0deg, rgba(255,255,255,.0) 3deg,
-    rgba(180,235,255,.35) 3.5deg, rgba(180,235,255,.0) 5deg);
-}
-#skill-fx.opp .sk-streaks {
-  background: repeating-conic-gradient(from 0deg at 50% 55%,
-    rgba(255,255,255,0) 0deg, rgba(255,255,255,0) 3deg,
-    rgba(255,180,180,.32) 3.5deg, rgba(255,180,180,0) 5deg);
-}
-#skill-fx.play .sk-streaks { animation: skStreak .7s ease-out; }
-@keyframes skStreak {
-  0% { opacity: 0; transform: scale(1.5) rotate(0deg); }
-  20% { opacity: .9; }
-  100% { opacity: 0; transform: scale(0.6) rotate(28deg); }
-}
-/* 中心のエネルギー爆発 */
-.sk-burst {
-  position: absolute; left: 50%; top: 55%; width: 40px; height: 40px;
-  transform: translate(-50%, -50%) scale(0); border-radius: 50%;
-  background: radial-gradient(circle, #fff 0%, #8fe0ff 40%, rgba(140,224,255,0) 72%);
-}
-#skill-fx.opp .sk-burst { background: radial-gradient(circle, #fff 0%, #ffb0b0 40%, rgba(255,176,176,0) 72%); }
-#skill-fx.play .sk-burst { animation: skBurst .55s cubic-bezier(.15,.9,.3,1); }
-@keyframes skBurst {
-  0% { transform: translate(-50%,-50%) scale(0); opacity: 1; }
-  60% { opacity: .9; }
-  100% { transform: translate(-50%,-50%) scale(11); opacity: 0; }
-}
-/* スキル名（斜めに勢いよく登場） */
+.sk-flash, .sk-streaks { display: none; } /* 全画面フラッシュ/集中線は廃止（邪魔なので） */
+/* スキル名バナー（横長・小さめ・素早く消える） */
 .sk-name {
-  position: absolute; left: 50%; top: 40%; transform: translate(-50%,-50%) skewX(-8deg) scale(.4);
-  font-size: clamp(30px, 7vw, 62px); font-weight: 900; font-style: italic; letter-spacing: 2px;
-  color: #fff; white-space: nowrap; opacity: 0;
-  -webkit-text-stroke: 2px #0a2740;
-  text-shadow: 0 0 18px #4dc3ff, 0 4px 0 #135, 0 6px 20px rgba(0,0,0,.6);
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 16px 6px 34px; border-radius: 4px; white-space: nowrap; opacity: 0;
+  font-size: clamp(15px, 3vw, 22px); font-weight: 900; font-style: italic; letter-spacing: 1px;
+  color: #fff;
+  background: linear-gradient(90deg, rgba(20,60,110,.0), rgba(20,70,130,.72) 30%, rgba(20,70,130,.72));
+  border-left: 3px solid #4dc3ff;
+  text-shadow: 0 0 10px rgba(77,195,255,.8), 0 2px 4px rgba(0,0,0,.7);
 }
-#skill-fx.opp .sk-name { -webkit-text-stroke: 2px #401010; text-shadow: 0 0 18px #ff6b6b, 0 4px 0 #511, 0 6px 20px rgba(0,0,0,.6); }
-#skill-fx.play .sk-name { animation: skName 1s cubic-bezier(.15,1.4,.35,1); }
+/* 左端の小さなエネルギー閃光アイコン */
+.sk-name::before {
+  content: '⚡'; position: absolute; left: 8px; font-size: 18px;
+  color: #bfefff; text-shadow: 0 0 8px #4dc3ff; filter: drop-shadow(0 0 4px #4dc3ff);
+}
+#skill-fx.opp .sk-name {
+  background: linear-gradient(90deg, rgba(110,20,20,0), rgba(130,30,30,.72) 30%, rgba(130,30,30,.72));
+  border-left-color: #ff6b6b; text-shadow: 0 0 10px rgba(255,107,107,.8), 0 2px 4px rgba(0,0,0,.7);
+}
+#skill-fx.opp .sk-name::before { color: #ffcaca; text-shadow: 0 0 8px #ff6b6b; }
+#skill-fx.play .sk-name { animation: skName .9s cubic-bezier(.2,1.2,.4,1); }
 @keyframes skName {
-  0% { opacity: 0; transform: translate(-50%,-50%) skewX(-8deg) scale(.3); }
-  18% { opacity: 1; transform: translate(-50%,-50%) skewX(-8deg) scale(1.15); }
-  30% { transform: translate(-50%,-50%) skewX(-8deg) scale(1); }
-  78% { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%,-52%) skewX(-8deg) scale(1.05); }
+  0% { opacity: 0; transform: translateX(-16px) scale(.9); }
+  15% { opacity: 1; transform: translateX(0) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(6px) scale(1); }
 }
-@media (max-height: 500px) { .sk-name { font-size: clamp(24px, 6vw, 44px); } }
+/* .sk-burst は使わないが残置（display:none） */
+.sk-burst { display: none; }
 
 #hud-center {
   position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
