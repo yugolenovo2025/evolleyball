@@ -139,6 +139,11 @@ button:active, .opt:active, .tactic-card:active { transform: scale(.97); }
   gap: 8px; padding: 10px 14px;
   background: linear-gradient(115deg, #05070d 0%, #0c1430 45%, #05070d 100%);
 }
+#prep-mpbar {
+  display: none; background: linear-gradient(90deg, #16305c, #1f5fd6); color: #fff;
+  font-weight: 800; font-size: 15px; letter-spacing: 1px; text-align: center;
+  padding: 8px 14px; border-radius: 8px; border: 1px solid #4dc3ff55;
+}
 #prep-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 #budget-row { display: flex; align-items: center; gap: 6px; }
 .bt-label { font-size: 12px; color: #9fb4c8; }
@@ -268,7 +273,18 @@ button:active, .opt:active, .tactic-card:active { transform: scale(.97); }
   font-size: 10px; padding: 1px 6px; border-radius: 3px; color: #fff; letter-spacing: 1px;
 }
 .p-S { background: #7a4ddf; } .p-OH { background: #2d6cdf; }
-.p-MB { background: #1f9d55; } .p-OP { background: #d94040; }
+.p-MB { background: #1f9d55; } .p-OP { background: #d94040; } .p-L { background: #e0a020; }
+/* リベロ枠（コート右下に固定表示） */
+.pcard.libero {
+  position: absolute; bottom: 8px; right: 8px; width: 25%; min-width: 96px; max-width: 132px;
+  border-color: rgba(224, 160, 32, .6);
+}
+.pcard.libero.empty {
+  border-style: dashed; background: rgba(20, 30, 46, .6);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+}
+.lib-add { font-size: 11px; color: #e0a020; font-weight: 700; line-height: 1.5; }
+.lib-add small { color: #7b8fa3; font-weight: 400; }
 .pc-rate { font-size: 19px; font-weight: 900; color: #57e389; }
 .pcard:not(.elite) .pc-rate { color: #eef2f6; }
 .pc-name { font-size: 12px; font-weight: 700; margin: 1px 0; }
@@ -691,6 +707,14 @@ button:active, .opt:active, .tactic-card:active { transform: scale(.97); }
 #gauge-fill.hot { background: linear-gradient(0deg, #4dff7a, #ffd034); }
 #gauge-fill.over { background: linear-gradient(0deg, #ffd034, #ff5d4d); }
 #radar { display: block; opacity: .92; }
+/* 体力ゲージ（操作選手） */
+#stamina { display: none; align-items: center; gap: 5px; grid-column: 2; }
+#stamina span { font-size: 9px; color: #9fb4c8; }
+#stamina-bar {
+  width: 110px; height: 7px; background: rgba(10,16,24,.85);
+  border: 1px solid #3a5070; border-radius: 4px; overflow: hidden;
+}
+#stamina-fill { height: 100%; width: 100%; background: #4dff7a; transition: width .2s, background .2s; }
 
 /* 右下: 操作ヒント */
 #hints {

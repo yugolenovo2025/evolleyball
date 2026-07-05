@@ -6,6 +6,7 @@ const CHOICE_KEYS: { key: string; choice: AttackChoice; label: string }[] = [
   { key: '3', choice: 'RIGHT', label: 'バック' },
   { key: '4', choice: 'PIPE', label: '二段' },
   { key: '5', choice: 'TWO', label: 'ツー' },
+  { key: '6', choice: 'PARA', label: '平行' },
 ];
 
 export class Hud {
@@ -50,6 +51,7 @@ export class Hud {
       <div id="bl-cluster">
         <div id="hud-plan"></div>
         <div id="cursor-name"></div>
+        <div id="stamina"><span>体力</span><div id="stamina-bar"><div id="stamina-fill"></div></div></div>
         <div id="gauge"><div id="gauge-fill"></div></div>
         <canvas id="radar" width="220" height="128"></canvas>
       </div>
@@ -376,6 +378,7 @@ export class Hud {
           ['RIGHT', 'バック'],
           ['PIPE', '時間差'],
           ['TWO', 'ツー'],
+          ['PARA', '平行'],
         ]
           .map(([c, l]) => `<div class="tcard" data-choice="${c}">${l}</div>`)
           .join('');
@@ -794,14 +797,16 @@ export class Hud {
       g.lineTo(cx(ax), cy(4.5));
       g.stroke();
     }
-    // 選手ドット（操作中はパルス発光）
+    // 選手ドット（操作中はパルス発光。疲労で薄くなる）
     const cursorIdx = snap.cursor[myTeam];
     const pulse = 5 + Math.sin(Date.now() * 0.009) * 1.4;
     snap.players.forEach((p, i) => {
+      g.globalAlpha = 0.4 + p.stamina * 0.6; // 疲れた選手は薄く
       g.beginPath();
       g.arc(cx(p.pos.x), cy(p.pos.z), 3.2, 0, Math.PI * 2);
       g.fillStyle = p.team === 0 ? '#4d8dff' : '#ff5d4d';
       g.fill();
+      g.globalAlpha = 1;
       if (i === cursorIdx) {
         g.beginPath();
         g.arc(cx(p.pos.x), cy(p.pos.z), pulse, 0, Math.PI * 2);
@@ -858,7 +863,7 @@ export class Hud {
     const planEl = document.getElementById('hud-plan')!;
     const plan = snap.plan[myTeam];
     if (plan) {
-      const label = { LEFT: 'オープン', QUICK: 'クイック', RIGHT: 'バック', PIPE: '二段', TWO: 'ツー' }[plan];
+      const label = { LEFT: 'オープン', QUICK: 'クイック', RIGHT: 'バック', PIPE: '二段', TWO: 'ツー', PARA: '平行' }[plan];
       planEl.textContent = `指示: ${label}`;
       planEl.style.display = 'block';
     } else {
@@ -868,12 +873,19 @@ export class Hud {
     // 操作対象の選手名プレート
     const cIdx = snap.cursor[myTeam];
     const nameEl = document.getElementById('cursor-name')!;
+    // 操作選手の体力ゲージ（低いと黄→赤）
+    const stEl = document.getElementById('stamina')!;
     if (cIdx !== null && snap.players[cIdx]) {
       const p = snap.players[cIdx];
       nameEl.textContent = `▶ ${p.name}  #${p.num} ${p.role}`;
       nameEl.style.display = 'block';
+      const fill = document.getElementById('stamina-fill')!;
+      fill.style.width = `${(p.stamina * 100).toFixed(0)}%`;
+      fill.style.background = p.stamina < 0.35 ? '#ff5d4d' : p.stamina < 0.6 ? '#ffd23e' : '#4dff7a';
+      stEl.style.display = 'flex';
     } else {
       nameEl.style.display = 'none';
+      stEl.style.display = 'none';
     }
 
     // コーチングボードのドット更新（ドラッグ中のドットは触らない）
@@ -898,7 +910,7 @@ export class Hud {
     this.updateGhost(prompt);
 
     // 新規イベント → トーストと効果音、連携のビートパルス
-    const TOSS_LABELS = ['オープン', 'クイック', 'バック', '二段', 'ツーアタック'];
+    const TOSS_LABELS = ['オープン', 'クイック', 'バック', '二段', 'ツーアタック', '平行'];
     for (const ev of snap.events) {
       if (ev.seq <= this.lastEventSeq) continue;
       this.lastEventSeq = ev.seq;

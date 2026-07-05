@@ -46,6 +46,7 @@ interface PlayerState {
   actDur: number;
   roster: RosterEntry;
   mstats: MatchStats; // 試合中の個人成績
+  stamina: number; // 現在の体力 0..1（消耗すると精度・速さが落ちる）
 }
 
 // ---- ロースター生成（将来の契約・育成機能はここを差し替える） ----
@@ -60,28 +61,31 @@ const SURNAMES = [
 
 import type { PosKey, Stats99 } from './types';
 
-// ポジション別のステータス傾向（中央値）
+// ポジション別のステータス傾向（中央値）。stamina: OH/OP高、Sやや低、L中〜高
 const POS_PROFILE: Record<PosKey, Stats99> = {
-  S: { spike: 34, power: 38, block: 42, receive: 58, jump: 50, agility: 66, teamwork: 74, decision: 72 },
-  OH: { spike: 70, power: 60, block: 52, receive: 64, jump: 70, agility: 62, teamwork: 56, decision: 54 },
-  MB: { spike: 58, power: 62, block: 76, receive: 38, jump: 74, agility: 64, teamwork: 50, decision: 56 },
-  OP: { spike: 78, power: 74, block: 56, receive: 42, jump: 70, agility: 54, teamwork: 46, decision: 52 },
+  S: { spike: 34, power: 38, block: 42, receive: 58, jump: 50, agility: 66, teamwork: 74, decision: 72, stamina: 60 },
+  OH: { spike: 70, power: 60, block: 52, receive: 64, jump: 70, agility: 62, teamwork: 56, decision: 54, stamina: 74 },
+  MB: { spike: 58, power: 62, block: 76, receive: 38, jump: 74, agility: 64, teamwork: 50, decision: 56, stamina: 58 },
+  OP: { spike: 78, power: 74, block: 56, receive: 42, jump: 70, agility: 54, teamwork: 46, decision: 52, stamina: 72 },
+  L: { spike: 10, power: 20, block: 12, receive: 84, jump: 40, agility: 82, teamwork: 66, decision: 78, stamina: 78 },
 };
 
 // コスト/総合値の重み（各ポジションの鍵となる能力）
 const POS_WEIGHTS: Record<PosKey, Partial<Record<keyof Stats99, number>>> = {
-  S: { teamwork: 0.34, decision: 0.28, agility: 0.18, receive: 0.2 }, // 司令塔: 連携が鍵
-  OH: { spike: 0.32, jump: 0.26, agility: 0.18, receive: 0.24 }, // 攻撃の柱: 高コスト枠
-  MB: { block: 0.36, agility: 0.24, jump: 0.28, power: 0.12 }, // 守備と撹乱: コスパ枠
-  OP: { spike: 0.36, power: 0.3, jump: 0.24, decision: 0.1 }, // 得点源: 最高コスト
+  S: { teamwork: 0.34, decision: 0.24, agility: 0.16, receive: 0.18, stamina: 0.08 }, // 司令塔: 連携が鍵
+  OH: { spike: 0.3, jump: 0.24, agility: 0.14, receive: 0.2, stamina: 0.12 }, // 攻撃の柱: 高コスト枠
+  MB: { block: 0.34, agility: 0.22, jump: 0.26, power: 0.12, stamina: 0.06 }, // 守備と撹乱: コスパ枠
+  OP: { spike: 0.34, power: 0.28, jump: 0.22, decision: 0.08, stamina: 0.08 }, // 得点源: 最高コスト
+  L: { receive: 0.42, agility: 0.28, decision: 0.2, stamina: 0.1 }, // 守備の要: 低コスト
 };
 
-// ポジション別スキルプール（効果実装済みのものが中心。最大2つ／無い選手もいる）
+// ポジション別スキルプール（効果実装済み。最大2つ／無い選手もいる）
 const SKILL_POOL: Record<PosKey, string[]> = {
   OH: ['強打', 'フェイント', '空中姿勢調整', 'デッドエンド', '変幻自在'],
   OP: ['決定力', 'バックアタック', '強心臓', 'デッドエンド', '強打'],
   MB: ['囮の達人', '速攻', 'リードブロック', '鉄壁の守護'],
   S: ['クイックトス', 'フェイント', '完璧な導き', '戦術指示'],
+  L: ['スーパーレシーブ', '守備範囲拡大', '先読み', '鉄壁の守護'],
 };
 
 const rnd99 = (mid: number, spread = 22) =>
@@ -119,6 +123,7 @@ export function genCandidate(pos: PosKey): RosterEntry {
     agility: rnd99(prof.agility),
     teamwork: rnd99(prof.teamwork),
     decision: rnd99(prof.decision),
+    stamina: rnd99(prof.stamina),
   };
   // 特化型契約: 役割特化で総合は低いがコストが激安になる
   let focus: string | null = null;
@@ -242,15 +247,16 @@ interface SetPromptState {
   pressed: TossQuality | null;
 }
 
-const CHOICES: AttackChoice[] = ['LEFT', 'QUICK', 'RIGHT', 'PIPE', 'TWO'];
+const CHOICES: AttackChoice[] = ['LEFT', 'QUICK', 'RIGHT', 'PIPE', 'TWO', 'PARA'];
 
-// 攻撃コースを守備側から見たブロックゾーンへ変換
+// 攻撃コースを守備側から見たブロックゾーンへ変換（PARA=平行はレフト方向）
 const CHOICE_ZONE: Record<AttackChoice, BlockZone> = {
   LEFT: 'R',
   QUICK: 'M',
   RIGHT: 'L',
   PIPE: 'M',
   TWO: 'M',
+  PARA: 'R',
 };
 
 const CHOICE_LABEL: Record<AttackChoice, string> = {
@@ -259,6 +265,7 @@ const CHOICE_LABEL: Record<AttackChoice, string> = {
   RIGHT: 'バック',
   PIPE: '二段',
   TWO: 'ツーアタック',
+  PARA: '平行',
 };
 
 const rnd = (lo = 0, hi = 1) => lo + Math.random() * (hi - lo);
@@ -318,11 +325,13 @@ export class VolleySim {
   } | null = null;
 
   attackCounts: [Record<AttackChoice, number>, Record<AttackChoice, number>] = [
-    { LEFT: 0, QUICK: 0, RIGHT: 0, PIPE: 0, TWO: 0 },
-    { LEFT: 0, QUICK: 0, RIGHT: 0, PIPE: 0, TWO: 0 },
+    { LEFT: 0, QUICK: 0, RIGHT: 0, PIPE: 0, TWO: 0, PARA: 0 },
+    { LEFT: 0, QUICK: 0, RIGHT: 0, PIPE: 0, TWO: 0, PARA: 0 },
   ];
 
   tactics: [Tactic, Tactic] = ['balanced', 'balanced'];
+  homeTeam: Team = 0; // ホーム（応援＋スタミナ回復の隠しバフ）
+  liberos: [RosterEntry | null, RosterEntry | null] = [null, null]; // 契約リベロ（守備強化）
   // 試合の長さ: basePts=25 or 15、bestOf=1/3/5
   basePts = 25;
   bestOf = 1;
@@ -371,6 +380,7 @@ export class VolleySim {
           actDur: 1,
           roster: ros[team][i],
           mstats: { atk: 0, kills: 0, blocks: 0, digs: 0, aces: 0 },
+          stamina: 1,
         });
       });
     }
@@ -379,6 +389,46 @@ export class VolleySim {
 
   setTactic(team: Team, t: Tactic) {
     this.tactics[team] = t;
+  }
+
+  setHome(team: Team) {
+    this.homeTeam = team;
+  }
+
+  // 契約リベロを登録（守備の要: 後衛レシーブを強化する。コート上の7人目は描画せず機能面で反映）
+  setLibero(team: Team, l: RosterEntry | null) {
+    this.liberos[team] = l;
+  }
+
+  // チームの丸ごと入れ替え（マルチの試合準備で各プレイヤーが自分のチームを確定させる）
+  setTeamRoster(team: Team, roster: RosterEntry[]) {
+    const ps = this.teamPlayers(team);
+    LINEUP.forEach((role, i) => {
+      const p = ps.find((q) => q.role === role);
+      if (p && roster[i]) {
+        p.roster = roster[i];
+        p.stamina = 1;
+        p.mstats = { atk: 0, kills: 0, blocks: 0, digs: 0, aces: 0 };
+      }
+    });
+    // 得点・セットをリセットして新編成で仕切り直し
+    this.score = [0, 0];
+    this.sets = [0, 0];
+    this.setNo = 1;
+    this.winner = null;
+    this.pendingSetBreak = null;
+    this.targetPts = this.computeTarget();
+    this.enterPreServe();
+  }
+
+  // 「戦術指示」持ちセッターがコートにいると全体が微バフ
+  private hasSkillBuff(team: Team, skill: string): boolean {
+    return this.teamPlayers(team).some((p) => p.roster.skills.includes(skill));
+  }
+
+  // スキル/シグネチャーの効果量に「絶好調(form)」を掛ける
+  private formAmp(p: PlayerState): number {
+    return p.roster.form >= 1.08 ? 1.4 : p.roster.form <= 0.9 ? 0.7 : 1.0;
   }
 
   // 試合の長さを設定（basePts: 25 or 15 / bestOf: 1,3,5）
@@ -413,10 +463,28 @@ export class VolleySim {
     );
   }
 
+  // 動作ごとのスタミナ消耗量（ジャンプ/スパイクは重い）
+  private static ACT_COST: Record<string, number> = {
+    jump: 0.05,
+    spike: 0.07,
+    serve: 0.05,
+    dig: 0.03,
+    lunge: 0.06,
+    set: 0.015,
+  };
+
   private setAct(p: PlayerState, kind: NonNullable<PlayerState['actKind']>, dur: number) {
     p.actKind = kind;
     p.actStart = this.time;
     p.actDur = dur;
+    // スタミナ消耗（スタミナ能力が高いほど消耗しにくい）
+    const cost = (VolleySim.ACT_COST[kind] ?? 0.02) * (1.4 - (p.roster.st.stamina / 99) * 0.8);
+    p.stamina = clamp(p.stamina - cost, 0.1, 1);
+  }
+
+  // 疲労時の能力係数（0..1）: スタミナが低いほど精度・威力が下がる。0.55が下限
+  private fatigue(p: PlayerState): number {
+    return 0.55 + p.stamina * 0.45;
   }
 
   private emit(kind: SimEvent['kind'], msg?: string, team?: Team) {
@@ -455,6 +523,8 @@ export class VolleySim {
         return back(['OH1', 'OH2']) ?? front(['OH1', 'OH2'])!;
       case 'TWO':
         return this.setterOf(team); // ツーアタックはセッター自身
+      case 'PARA':
+        return front(['OH1', 'OH2']) ?? back(['OH1', 'OH2'])!; // 平行はレフトへ低く速く
     }
   }
 
@@ -815,12 +885,16 @@ export class VolleySim {
         const servePressure =
           { PERFECT: 0.45, GOOD: 0.3, OK: 0.16, POOR: 0.06 }[plan.serveQ] *
           (0.6 + plan.servePow * 0.8);
-        // レシーブ力 + 連携(乱れたボールを返す精度) + スキル
+        // レシーブ力 + 連携(乱れたボールを返す精度) + スキル + リベロ補正 - 疲労
+        const lib = this.liberos[plan.team];
+        const libBoost = lib && !this.isFront(receiver.slot) ? Math.max(0, (lib.st.receive - 70) / 99) * 0.25 : 0;
         const recvBonus =
           (receiver.roster.stats.receive - 0.5) * 0.3 +
           ((receiver.roster.st.teamwork - 50) / 99) * 0.08 +
           (receiver.roster.form - 1.0) * 0.35 + // 調子の波
-          (receiver.roster.skills.includes('スーパーレシーブ') ? 0.08 : 0);
+          (receiver.roster.skills.includes('スーパーレシーブ') ? 0.08 : 0) +
+          libBoost - // 契約リベロが後衛守備を底上げ
+          (1 - this.fatigue(receiver)) * 0.12; // 疲労で精度低下
         const q = clamp(
           0.88 - servePressure + recvBonus + this.consumeRecvTiming(plan.team) - rnd(0, 0.3),
           0.02,
@@ -1033,7 +1107,7 @@ export class VolleySim {
         agg.R += p.roster.tendency.R;
       }
       const weights: [AttackChoice, number][] = [
-        ['LEFT', agg.L * 0.7], ['PIPE', agg.L * 0.3],
+        ['LEFT', agg.L * 0.55], ['PARA', agg.L * 0.25], ['PIPE', agg.L * 0.2],
         ['QUICK', agg.C],
         ['RIGHT', agg.R * 0.8], ['TWO', 0.12],
       ];
@@ -1090,7 +1164,9 @@ export class VolleySim {
     attacker.target = { ...ap };
 
     const quickish = choice === 'QUICK';
-    const T = quickish ? 0.62 : 1.05;
+    const para = choice === 'PARA';
+    // 平行は速く低い（タイミングはシビアだがブロックが付きにくい）
+    const T = quickish ? 0.62 : para ? 0.7 : 1.05;
     // 打点 = 頭上リーチ2.29×身長 + ジャンプ力由来の跳躍(0.5〜0.84)。ジャンプ99の選手は高く打つ
     const hitY = Math.min(
       3.42,
@@ -1101,7 +1177,7 @@ export class VolleySim {
       p1: v3(ap.x, hitY, ap.z),
       T,
       t: 0,
-      h: quickish ? 0.7 : 2.4,
+      h: quickish ? 0.7 : para ? 0.9 : 2.4,
       plan: { kind: 'attack', team, choice, quality, attackerIdx: idx },
     };
     this.emit('toss', CHOICE_LABEL[choice], team);
@@ -1140,6 +1216,8 @@ export class VolleySim {
       const bestDec = readers.reduce((m, p) => Math.max(m, p.roster.st.decision), 40);
       let acc = 0.4 + (bestDec / 99) * 0.45;
       if (this.teamHasSkill(team, '囮の達人', true)) acc -= 0.15;
+      // 先読み: コースを事前に察知して自動照準の精度が上がる
+      if (this.teamHasSkill(defTeam, '先読み')) acc += 0.18;
       this.blockCommit[defTeam] =
         Math.random() < acc ? CHOICE_ZONE[choice] : pick(['L', 'M', 'R'] as BlockZone[]);
     }
@@ -1182,11 +1260,34 @@ export class VolleySim {
       const defJump =
         defFront.reduce((s, p) => s + p.roster.st.jump, 0) / Math.max(1, defFront.length);
       blocked += ((defJump - 62) / 99) * 0.1;
-      // スキル
-      if (attacker.roster.skills.includes('強打') || attacker.roster.skills.includes('決定力'))
-        kill += 0.06;
-      if (choice === 'QUICK' && attacker.roster.skills.includes('速攻')) kill += 0.08;
+      // スキル（絶好調 form で効果増幅）
+      const amp = this.formAmp(attacker);
+      const sk = attacker.roster.skills;
+      if (sk.includes('強打') || sk.includes('決定力')) kill += 0.06 * amp;
+      if (choice === 'QUICK' && sk.includes('速攻')) kill += 0.08 * amp;
+      if (choice === 'PARA' && sk.includes('速攻')) kill += 0.05 * amp;
+      if ((choice === 'PIPE' || choice === 'RIGHT') && sk.includes('バックアタック'))
+        kill += 0.1 * amp; // OP のバックアタック
+      if (sk.includes('空中姿勢調整')) err -= 0.05 * amp; // 空中で体勢を立て直しミスを減らす
+      // 強心臓: 終盤・ビハインドで真価
+      if (sk.includes('強心臓') && (this.score[team] >= this.targetPts - 5 || this.score[team] < this.score[defTeam]))
+        kill += 0.08 * amp;
+      // シグネチャー・ムーブ（データの癖をプレーに反映）
+      const sig = attacker.roster.signature;
+      if (sig === '爆発的パワー') kill += 0.05 * amp;
+      if (sig === '滞空マスター' && (choice === 'LEFT' || choice === 'RIGHT')) kill += 0.05 * amp;
+      // 平行トス: ブロックが付きにくいが精度がシビア（POORでさらに崩れる）
+      if (choice === 'PARA') {
+        blocked -= 0.06;
+        if (quality === 'POOR') err += 0.06;
+      }
+      // 戦術指示（セッター）: 味方全体の決定力を微上げ
+      if (this.hasSkillBuff(team, '戦術指示')) kill += 0.03;
     }
+    // スタミナ疲労: 決定率が落ち、ミスが増える
+    const fat = this.fatigue(attacker);
+    kill *= 0.7 + fat * 0.3;
+    err += (1 - fat) * 0.12;
 
     // 人間アタッカー: チャージパワーとコース入力
     const ctl = this.spikeCtl && this.spikeCtl.team === team ? this.spikeCtl : null;
@@ -1218,11 +1319,21 @@ export class VolleySim {
           kill += 0.15;
           blocked -= 0.08;
         }
+        // 変幻自在: 読まれても打点でコースを変えてブロックを外す
+        if (attacker.roster.skills.includes('変幻自在')) {
+          kill += 0.12;
+          blocked -= 0.06;
+        }
       } else {
         blocked -= 0.07;
         kill += 0.11;
       }
     }
+    // 守備側ブロッカーのスキル/シグネチャー
+    const blockAmp = defFront.length ? Math.max(...defFront.map((p) => this.formAmp(p))) : 1;
+    if (this.teamHasSkill(defTeam, '鉄壁ウォール', true)) blocked += 0.06 * blockAmp;
+    if (defFront.some((p) => p.roster.signature === '鉄壁ウォール')) blocked += 0.05 * blockAmp;
+    if (defFront.some((p) => p.roster.signature === '高速リアクション')) blocked += 0.05 * blockAmp;
     // 戦術補正
     const atkTac = this.tactics[team];
     if (atkTac === 'aggressive') { kill += 0.05; err += 0.04; }
@@ -1230,6 +1341,10 @@ export class VolleySim {
     const defTac = this.tactics[defTeam];
     if (defTac === 'defensive') kill -= 0.05; // 拾われやすい
     if (defTac === 'aggressive') blocked += 0.04;
+    // 守備範囲拡大（リベロ）: 守備側がボールを拾いやすくなりラリーが続く
+    if (this.teamHasSkill(defTeam, '守備範囲拡大')) kill -= 0.05;
+    // リベロ契約: 後衛守備の総合力が上がり、スパイクを拾われやすくする
+    if (this.liberos[defTeam]) kill -= Math.max(0, (this.liberos[defTeam]!.st.receive - 70) / 99) * 0.08;
     // 守備側人間のブロック: 跳んでいなければ壁は存在しない（見た目と判定の一致）
     if (!this.cpu[defTeam]) {
       const bp = this.blockJumpAt[defTeam];
@@ -1506,7 +1621,8 @@ export class VolleySim {
 
     // 選手は全員自動で移動する。速さは能力値で差がつき、加速のなましで慣性・重量感を出す
     for (const p of this.players) {
-      const maxSpeed = 4.2 + p.roster.stats.speed * 2.0;
+      // スタミナ: 疲れると最高速が落ちる。ホームチームは回復が速い（隠しバフ）
+      const maxSpeed = (4.2 + p.roster.stats.speed * 2.0) * this.fatigue(p);
       const dx = p.target.x - p.pos.x;
       const dz = p.target.z - p.pos.z;
       const d = Math.hypot(dx, dz);
@@ -1522,6 +1638,11 @@ export class VolleySim {
       p.vel.z += (tvz - p.vel.z) * k;
       p.pos.x += p.vel.x * dt;
       p.pos.z += p.vel.z * dt;
+      // スタミナ回復（移動中は遅く、待機中は速い。ホーム＋スタミナ能力で加速）
+      const moving = d > 0.3;
+      const homeBonus = p.team === this.homeTeam ? 1.25 : 1.0;
+      const recover = (moving ? 0.012 : 0.05) * (0.7 + (p.roster.st.stamina / 99) * 0.6) * homeBonus;
+      p.stamina = clamp(p.stamina + recover * dt, 0, 1);
     }
 
     switch (this.phase) {
@@ -1749,6 +1870,8 @@ export class VolleySim {
           height: p.roster.height,
           stats: { ...p.roster.stats },
           mstats: { ...p.mstats },
+          stamina: p.stamina,
+          signature: p.roster.signature,
         };
       }),
       ball: { pos: { ...this.ballPos }, visible: this.ballVisible },

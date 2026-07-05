@@ -144,6 +144,21 @@ wss.on('connection', (ws) => {
     if (msg.type === 'input' && room && team !== null) {
       room.sim.input(team, msg.input as Input);
     }
+    // 試合準備: 各プレイヤーが自分のチーム編成/戦術を確定。ホストは試合の長さも決める。
+    if (msg.type === 'setup' && room && team !== null) {
+      if (msg.roster) room.sim.setTeamRoster(team, msg.roster);
+      if (msg.tactic) room.sim.setTactic(team, msg.tactic);
+      room.sim.setLibero(team, msg.libero ?? null);
+      if (team === 0) {
+        room.sim.setHome(0); // ホスト=ホーム
+        if (msg.matchLen) room.sim.setMatchLength(msg.matchLen.basePts, msg.matchLen.bestOf);
+      }
+      // 相手にも編成確定を通知
+      const other = room.clients[1 - team];
+      if (other && other.readyState === WebSocket.OPEN) {
+        other.send(JSON.stringify({ type: 'info', msg: `相手が編成を確定しました` }));
+      }
+    }
   });
 
   ws.on('close', () => {

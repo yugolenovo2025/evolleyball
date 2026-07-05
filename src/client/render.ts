@@ -726,8 +726,8 @@ export class GameRenderer {
     this.impactRing.visible = false;
     this.scene.add(this.impactRing);
 
-    // タクティカル・ビュー用: 各トス選択のアタッカー頭上に出す番号マーカー (1-5)
-    for (let i = 1; i <= 5; i++) {
+    // タクティカル・ビュー用: 各トス選択のアタッカー頭上に出す番号マーカー (1-6)
+    for (let i = 1; i <= 6; i++) {
       const c = document.createElement('canvas');
       c.width = 64;
       c.height = 64;
@@ -1317,7 +1317,7 @@ export class GameRenderer {
         const sp = this.optSprites[i];
         const pl = this.players[opt.idx];
         const ps = snap.players[opt.idx];
-        if (!pl || !ps) return;
+        if (!sp || !pl || !ps) return;
         sp.visible = true;
         sp.position.set(
           pl.group.position.x,

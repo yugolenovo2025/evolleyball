@@ -50,6 +50,7 @@ const APPROACH: Record<AttackChoice, V3> = {
   RIGHT: v3(-1.9, 0, 3.3),
   PIPE: v3(-4.2, 0, -0.9),
   TWO: v3(-1.1, 0, 1.0), // ツーアタックはセッター位置付近（実際は performSet 側で上書き）
+  PARA: v3(-1.9, 0, -2.6), // 平行トス: レフト寄り、やや内側で低く速く
 };
 
 export function approachPos(team: Team, choice: AttackChoice): V3 {

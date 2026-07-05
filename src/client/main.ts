@@ -7,6 +7,7 @@ import { SLOT_POS, generateCandidates, generateRoster } from '../sim/sim';
 import {
   AttackChoice,
   BlockZone,
+  PosKey,
   Prompt,
   RosterEntry,
   Snapshot,
@@ -249,6 +250,10 @@ function startGame(t: Transport) {
     applyPause();
   };
   if (t instanceof LocalTransport) hud.showTutorialIfFirst(); // 初回のみ自動表示（ソロ限定）
+  if (pendingRoomInfo) {
+    hud.setRoomInfo(pendingRoomInfo);
+    pendingRoomInfo = '';
+  }
 
   let last = performance.now();
   const loop = (now: number) => {
@@ -279,9 +284,11 @@ function startGame(t: Transport) {
       hud.updateBallArrow(renderer.ballScreenInfo());
       hud.update(snap, transport.myTeam);
       // 試合終了 → アナリティクス・ダッシュボード（ソロのみ、少し余韻をおいて）
-      if (snap.phase === 'matchOver' && !dashShown && transport instanceof LocalTransport) {
+      // 試合終了 → アナリティクス・ダッシュボード（ソロ・マルチとも）
+      if (snap.phase === 'matchOver' && !dashShown) {
         dashShown = true;
-        setTimeout(() => showDashboard(snap, transport!.myTeam), 2600);
+        const t = transport!;
+        setTimeout(() => showDashboard(t.latestSnapshot() ?? snap, t.myTeam), 2600);
       }
     }
     requestAnimationFrame(loop);
@@ -419,9 +426,15 @@ let matchPts = 25; // 25 or 15
 let matchSets = 1; // 1, 3, 5
 let candidates: RosterEntry[][] = []; // スロット別の契約候補（LINEUP順: S,OH,MB,OP,OH,MB）
 let picked: number[] = [0, 0, 0, 0, 0, 0];
+let liberoCands: RosterEntry[] = []; // リベロ候補
+let pickedLibero = -1; // -1 = リベロ契約なし
 let oppRoster: RosterEntry[] = [];
 let myRoster: RosterEntry[] = []; // ダッシュボードでの平均比較用（試合前の契約データ）
 let dashShown = false;
+// 試合準備モード: solo / mpHost / mpGuest
+let prepMode: 'solo' | 'mpHost' | 'mpGuest' = 'solo';
+let mpTransport: Transport | null = null;
+let pendingRoomInfo = ''; // 試合開始後に表示するルーム情報
 
 // コート上のカード配置（上=ネット側が前衛）
 const CARD_POS: { top: number; left: number }[] = [
@@ -434,18 +447,22 @@ const CARD_POS: { top: number; left: number }[] = [
 ];
 const KEY_STATS: Record<string, (keyof RosterEntry['st'])[]> = {
   S: ['teamwork', 'decision', 'agility'],
-  OH: ['spike', 'jump', 'receive'],
+  OH: ['spike', 'jump', 'stamina'],
   MB: ['block', 'agility', 'jump'],
   OP: ['spike', 'power', 'jump'],
+  L: ['receive', 'agility', 'decision'],
 };
 const ST_LABEL: Record<string, string> = {
   spike: 'スパイク', power: 'パワー', block: 'ブロック', receive: 'レシーブ',
-  jump: 'ジャンプ', agility: '敏捷', teamwork: '連携', decision: '判断',
+  jump: 'ジャンプ', agility: '敏捷', teamwork: '連携', decision: '判断', stamina: '体力',
 };
 
 const myTeamOf = () => picked.map((ci, s) => candidates[s][ci]);
-const totalCost = () => myTeamOf().reduce((sum, r) => sum + r.cost, 0);
-const teamPower = () => myTeamOf().reduce((sum, r) => sum + r.rating, 0);
+const myLibero = () => (pickedLibero >= 0 ? liberoCands[pickedLibero] : null);
+const totalCost = () =>
+  myTeamOf().reduce((sum, r) => sum + r.cost, 0) + (myLibero()?.cost ?? 0);
+const teamPower = () =>
+  myTeamOf().reduce((sum, r) => sum + r.rating, 0) + (myLibero()?.rating ?? 0);
 
 // 予算内で総合値最大を狙う自動配置（最高評価から始め、コスパの悪い順に格下げ）
 function autoAssign() {
@@ -485,7 +502,7 @@ function refreshPrep() {
   kick.disabled = total > budget;
   kick.textContent = total > budget ? '予算オーバー' : '試合へ ›';
 
-  // コート上のカード
+  // コート上のカード（6人）
   const court = document.getElementById('court-cards')!;
   court.innerHTML = myTeamOf()
     .map((r, s) => {
@@ -501,28 +518,46 @@ function refreshPrep() {
     })
     .join('');
 
-  // 相手のコスト配分（データ・スカウティング: 編成コンセプトのチラ見せ）
-  const grp: Record<string, number> = { S: 0, OH: 0, MB: 0, OP: 0 };
-  for (const r of oppRoster) grp[r.pos] += r.cost;
-  const gmax = Math.max(...Object.values(grp), 1);
-  document.getElementById('opp-graph')!.innerHTML = (['OP', 'OH', 'MB', 'S'] as const)
-    .map(
-      (k) => `<div class="og-row"><span>${k}</span>
+  // リベロ枠（守備の要・任意契約）
+  const lib = myLibero();
+  const libEl = document.getElementById('libero-slot')!;
+  libEl.className = `pcard libero ${lib ? '' : 'empty'}`;
+  libEl.innerHTML = lib
+    ? `<div class="pc-row"><b class="pc-pos p-L">L</b><b class="pc-rate">${lib.rating}</b></div>
+       <div class="pc-name">${lib.name}</div>
+       <div class="pc-row2"><span class="pc-cost">C${lib.cost}</span>守${lib.st.receive}</div>`
+    : `<div class="lib-add">＋ リベロを契約<br><small>（守備の要・任意）</small></div>`;
+
+  // MP は相手の編成が不明なので、スカウティング/相性は非表示
+  const rightPanels = document.getElementById('opp-graph')!.parentElement!;
+  const isSolo = prepMode === 'solo';
+  document.querySelectorAll<HTMLElement>('.solo-only').forEach((el) => {
+    el.style.display = isSolo ? '' : 'none';
+  });
+  void rightPanels;
+  if (isSolo) {
+    // 相手のコスト配分（データ・スカウティング）
+    const grp: Record<string, number> = { S: 0, OH: 0, MB: 0, OP: 0 };
+    for (const r of oppRoster) grp[r.pos] += r.cost;
+    const gmax = Math.max(...Object.values(grp), 1);
+    document.getElementById('opp-graph')!.innerHTML = (['OP', 'OH', 'MB', 'S'] as const)
+      .map(
+        (k) => `<div class="og-row"><span>${k}</span>
         <div class="og-bar"><div style="width:${((grp[k] / gmax) * 100).toFixed(0)}%"></div></div>
         <b>${grp[k]}</b></div>`,
-    )
-    .join('');
-
-  // マッチアップ相性: 自分の最強ブロッカー vs 相手エース（最高スパイク）の統計的サジェスト
-  const myBlocker = myTeamOf().reduce((b, r) => (r.st.block > b.st.block ? r : b));
-  const oppAce = oppRoster.reduce((a, r) => (r.st.spike > a.st.spike ? r : a));
-  const stopPct = Math.round(
-    clampNum(28 + (myBlocker.st.block - oppAce.st.spike) * 0.55 + myBlocker.st.jump * 0.12, 8, 92),
-  );
-  document.getElementById('matchup')!.innerHTML = `
-    <div class="mu-line"><b>${myBlocker.name}</b>(壁${myBlocker.st.block}) なら</div>
-    <div class="mu-line">相手エース <b>${oppAce.name}</b>(攻${oppAce.st.spike}) の</div>
-    <div class="mu-line">スパイクを <b class="mu-pct">${stopPct}%</b> 止められる</div>`;
+      )
+      .join('');
+    // マッチアップ相性
+    const myBlocker = myTeamOf().reduce((b, r) => (r.st.block > b.st.block ? r : b));
+    const oppAce = oppRoster.reduce((a, r) => (r.st.spike > a.st.spike ? r : a));
+    const stopPct = Math.round(
+      clampNum(28 + (myBlocker.st.block - oppAce.st.spike) * 0.55 + myBlocker.st.jump * 0.12, 8, 92),
+    );
+    document.getElementById('matchup')!.innerHTML = `
+      <div class="mu-line"><b>${myBlocker.name}</b>(壁${myBlocker.st.block}) なら</div>
+      <div class="mu-line">相手エース <b>${oppAce.name}</b>(攻${oppAce.st.spike}) の</div>
+      <div class="mu-line">スパイクを <b class="mu-pct">${stopPct}%</b> 止められる</div>`;
+  }
 }
 
 function clampNum(v: number, lo: number, hi: number) {
@@ -573,6 +608,51 @@ function showDashboard(snap: Snapshot, myTeam: Team) {
     <table><thead><tr><th>選手</th><th>決定/試行</th><th>ブロック</th><th>レシーブ</th><th>エース</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
   document.getElementById('dash')!.style.display = 'flex';
+}
+
+// 候補リストの1枚を描画（コートスロットとリベロ枠で共用）
+function candCardHtml(r: RosterEntry, pos: PosKey, selected: boolean, i: number): string {
+  const stats = KEY_STATS[pos]
+    .map((k) => `<span class="ps"><em>${ST_LABEL[k]}</em><b>${r.st[k]}</b></span>`)
+    .join('');
+  const skills = r.skills.map((sk) => `<span class="sk">★${sk}</span>`).join('');
+  const spark = r.trend
+    .map((v, ti) => `<i style="height:${4 + v * 18}px" class="${ti === 2 && v > 0.7 ? 'hot' : ''}"></i>`)
+    .join('');
+  const formTag =
+    r.form >= 1.08 ? '<span class="form up">絶好調</span>' : r.form <= 0.9 ? '<span class="form dn">不調</span>' : '';
+  const heat = (['L', 'C', 'R'] as const)
+    .map((k) => `<i style="opacity:${(0.2 + r.tendency[k] * 0.8).toFixed(2)}" title="${k}"></i>`)
+    .join('');
+  const sig = r.signature ? `<span class="sig">◈ ${r.signature}</span>` : '';
+  return `
+      <div class="cand ${selected ? 'sel' : ''}" data-i="${i}">
+        <div class="cand-l"><b class="pc-rate">${r.rating}</b><span class="pc-cost">C${r.cost}</span></div>
+        <div class="cand-m">
+          <div class="cand-name">${r.name} ${r.focus ? `<em class="focus">${r.focus}</em>` : ''} ${formTag}</div>
+          <div class="cand-stats">${stats}</div>
+          <div class="cand-skills">${sig}${skills}${!sig && !skills ? '<span class="nosk">スキルなし</span>' : ''}</div>
+        </div>
+        <div class="cand-r">
+          <div class="ana-lbl">調子</div><div class="spark">${spark}</div>
+          <div class="ana-lbl">攻撃傾向</div><div class="heat">${heat}</div>
+        </div>
+      </div>`;
+}
+
+// リベロ契約ピッカー（「契約しない」も選べる）
+function openLiberoPicker() {
+  document.getElementById('picker-title')!.textContent =
+    `リベロ の契約候補 — 鍵となる能力: ${KEY_STATS.L.map((k) => ST_LABEL[k]).join(' / ')}`;
+  const none = `<div class="cand ${pickedLibero < 0 ? 'sel' : ''}" data-i="-1">
+      <div class="cand-l"><b class="pc-rate">—</b><span class="pc-cost">C0</span></div>
+      <div class="cand-m"><div class="cand-name">契約しない</div>
+      <div class="cand-skills"><span class="nosk">リベロ枠を空ける</span></div></div></div>`;
+  document.getElementById('picker-list')!.innerHTML =
+    none + liberoCands.map((r, i) => candCardHtml(r, 'L', pickedLibero === i, i)).join('');
+  const pk = document.getElementById('picker')!;
+  pk.style.display = 'flex';
+  pk.dataset.slot = 'L';
 }
 
 function openPicker(slot: number) {
@@ -626,12 +706,23 @@ function openPicker(slot: number) {
   pk.dataset.slot = String(slot);
 }
 
-function showPrep() {
+function showPrep(mode: 'solo' | 'mpHost' | 'mpGuest' = 'solo', t: Transport | null = null) {
+  prepMode = mode;
+  mpTransport = t;
   menu.style.display = 'none';
   document.getElementById('prep')!.style.display = 'flex';
   candidates = SLOT_POS.map((pos) => generateCandidates(pos, 5));
+  liberoCands = generateCandidates('L', 5);
+  pickedLibero = -1;
   oppRoster = generateRoster(budget);
   autoAssign();
+  // ゲストは試合の長さを変更できない（ホストが決める）→ 選択UIを無効化
+  document.getElementById('len-row')!.style.opacity = mode === 'mpGuest' ? '0.4' : '1';
+  document.getElementById('len-row')!.style.pointerEvents = mode === 'mpGuest' ? 'none' : 'auto';
+  // マルチはルーム情報バーを表示（ホストはルームコードを友達に伝える）
+  const mpbar = document.getElementById('prep-mpbar')!;
+  mpbar.style.display = mode === 'solo' ? 'none' : 'block';
+  mpbar.textContent = pendingRoomInfo;
   refreshPrep();
 }
 
@@ -670,13 +761,21 @@ document.getElementById('budget-row')!.addEventListener('pointerdown', (e) => {
 
 document.getElementById('court-cards')!.addEventListener('pointerdown', (e) => {
   const card = (e.target as HTMLElement).closest<HTMLElement>('.pcard');
-  if (card) openPicker(Number(card.dataset.slot));
+  if (card && card.dataset.slot !== undefined) openPicker(Number(card.dataset.slot));
+});
+document.getElementById('libero-slot')!.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  openLiberoPicker();
 });
 document.getElementById('picker-list')!.addEventListener('pointerdown', (e) => {
   const c = (e.target as HTMLElement).closest<HTMLElement>('.cand');
   if (!c) return;
-  const slot = Number(document.getElementById('picker')!.dataset.slot ?? 0);
-  picked[slot] = Number(c.dataset.i ?? 0);
+  const slotKey = document.getElementById('picker')!.dataset.slot ?? '0';
+  if (slotKey === 'L') {
+    pickedLibero = Number(c.dataset.i ?? -1);
+  } else {
+    picked[Number(slotKey)] = Number(c.dataset.i ?? 0);
+  }
   document.getElementById('picker')!.style.display = 'none';
   refreshPrep();
 });
@@ -689,6 +788,10 @@ document.getElementById('btn-auto')!.addEventListener('pointerdown', () => {
 });
 document.getElementById('btn-back')!.addEventListener('pointerdown', () => {
   document.getElementById('prep')!.style.display = 'none';
+  if (mpTransport) {
+    mpTransport.close(); // マルチ準備を抜けたら切断
+    mpTransport = null;
+  }
   menu.style.display = 'flex';
 });
 
@@ -696,17 +799,36 @@ document.getElementById('btn-kickoff')!.addEventListener('click', () => {
   if (totalCost() > budget) return; // 予算オーバーは出撃不可
   document.getElementById('prep')!.style.display = 'none';
   myRoster = myTeamOf();
-  startGame(
-    new LocalTransport(false, true, 0, [myRoster, oppRoster], prepTactic, {
-      basePts: matchPts,
-      bestOf: matchSets,
-    }),
-  );
+  const libero = myLibero();
+  if (prepMode === 'solo') {
+    startGame(
+      new LocalTransport(false, true, 0, [myRoster, oppRoster], prepTactic, {
+        basePts: matchPts,
+        bestOf: matchSets,
+      }),
+    );
+    // ソロはリベロもシムへ反映
+    (transport as LocalTransport)?.configure({
+      roster: myRoster,
+      tactic: prepTactic,
+      libero,
+      matchLen: { basePts: matchPts, bestOf: matchSets },
+    });
+  } else if (mpTransport) {
+    // マルチ: 自分の編成をサーバーへ送信（ホストは試合の長さも）
+    mpTransport.configure({
+      roster: myRoster,
+      tactic: prepTactic,
+      libero,
+      matchLen: prepMode === 'mpHost' ? { basePts: matchPts, bestOf: matchSets } : undefined,
+    });
+    startGame(mpTransport);
+  }
 });
 
 document.getElementById('dash-close')!.addEventListener('pointerdown', () => location.reload());
 
-document.getElementById('btn-solo')!.addEventListener('click', showPrep);
+document.getElementById('btn-solo')!.addEventListener('click', () => showPrep('solo'));
 
 // スプラッシュ → タップでメニューへ（音声はユーザー操作で有効化される）
 {
@@ -735,9 +857,9 @@ document.getElementById('btn-host')!.addEventListener('click', () => {
   const t = new WsTransport(wsUrl(), 'host');
   t.onError = (m) => (menuStatus.textContent = m);
   t.onReady = (_team: Team, code: string) => {
-    startGame(t);
-    hud?.setRoomInfo(`ルームコード: ${code} — 友達の参加待ち（AIが代行中）`);
+    pendingRoomInfo = `ルームコード: ${code} — 友達の参加待ち（AIが代行中）`;
     t.onStatus = (m) => hud?.setRoomInfo(`ルーム ${code}: ${m}`);
+    showPrep('mpHost', t); // ホストが編成・戦術・試合の長さを設定
   };
 });
 
@@ -753,8 +875,8 @@ document.getElementById('btn-join')!.addEventListener('click', () => {
   const t = new WsTransport(wsUrl(), 'join', code);
   t.onError = (m) => (menuStatus.textContent = m);
   t.onReady = (_team: Team, c: string) => {
-    startGame(t);
-    hud?.setRoomInfo(`ルーム ${c} に参加中（あなたは RED）`);
+    pendingRoomInfo = `ルーム ${c} に参加中（あなたは RED）`;
     t.onStatus = (m) => hud?.setRoomInfo(`ルーム ${c}: ${m}`);
+    showPrep('mpGuest', t); // ゲストは自分の編成・戦術を設定（試合の長さはホスト）
   };
 });

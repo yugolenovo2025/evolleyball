@@ -74,6 +74,7 @@
 
   <!-- 選手契約 & チーム編成（eFootball のフォーメーション画面準拠） -->
   <div id="prep" style="display:none">
+    <div id="prep-mpbar"></div>
     <div id="prep-top">
       <div id="budget-row">
         <span class="bt-label">予算</span>
@@ -104,14 +105,15 @@
       <div id="prep-court">
         <div class="pc-head"><span>5-1 ローテーション</span><span id="pc-style">サイドアウト重視</span></div>
         <div id="court-cards"></div>
+        <div id="libero-slot" class="pcard libero empty"></div>
       </div>
       <aside id="prep-right">
         <div class="tp-label">チームパワー</div>
         <div id="team-power">0</div>
-        <div class="tp-label">相手のコスト配分（スカウティング）</div>
-        <div id="opp-graph"></div>
-        <div class="tp-label">マッチアップ相性</div>
-        <div id="matchup"></div>
+        <div class="tp-label solo-only">相手のコスト配分（スカウティング）</div>
+        <div id="opp-graph" class="solo-only"></div>
+        <div class="tp-label solo-only">マッチアップ相性</div>
+        <div id="matchup" class="solo-only"></div>
         <button id="btn-auto">自動配置</button>
       </aside>
     </div>

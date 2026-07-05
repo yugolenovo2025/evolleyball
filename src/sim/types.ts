@@ -14,8 +14,8 @@ export type Role = 'S' | 'OH1' | 'MB1' | 'OP' | 'OH2' | 'MB2';
 // 5-1 のローテーション順（スロット1から時計回り）
 export const LINEUP: Role[] = ['S', 'OH1', 'MB1', 'OP', 'OH2', 'MB2'];
 
-// トスの種類: オープン(レフト) / クイック / バック(ライト) / 二段(パイプ) / ツーアタック
-export type AttackChoice = 'LEFT' | 'QUICK' | 'RIGHT' | 'PIPE' | 'TWO';
+// トスの種類: オープン / クイック / バック / 二段 / ツーアタック / 平行(低く速い)
+export type AttackChoice = 'LEFT' | 'QUICK' | 'RIGHT' | 'PIPE' | 'TWO' | 'PARA';
 export type BlockZone = 'L' | 'M' | 'R';
 export type Tactic = 'aggressive' | 'balanced' | 'defensive';
 
@@ -42,9 +42,10 @@ export interface Stats99 {
   agility: number; // 敏捷性・反応速度
   teamwork: number; // 連携（トス・レシーブの精度）
   decision: number; // 判断力（読み・予測）
+  stamina: number; // 体力の最大量と回復速度（消耗すると精度・速さが落ちる）
 }
 
-export type PosKey = 'S' | 'OH' | 'MB' | 'OP';
+export type PosKey = 'S' | 'OH' | 'MB' | 'OP' | 'L';
 
 export interface RosterEntry {
   name: string;
@@ -86,6 +87,8 @@ export interface PlayerSnap {
   height: number;
   stats: PlayerStats; // モーション個性の生成・UI 表示用
   mstats: MatchStats; // 試合中の個人成績
+  stamina: number; // 現在の体力 0..1
+  signature: string | null; // シグネチャー・ムーブ（プレー挙動に反映）
 }
 
 // 各チームの人間プレイヤーに提示する入力プロンプト（eFootball 型: ゲージ＋タイミング）

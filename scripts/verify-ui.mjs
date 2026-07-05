@@ -78,26 +78,25 @@ async function keyDriver(page) {
 
   await host.goto(BASE, { waitUntil: 'domcontentloaded' });
   await host.click('#btn-host');
-  await host.waitForSelector('#hud-room', { state: 'visible', timeout: 10000 });
-  const roomText = await host.textContent('#hud-room');
+  // ホストは準備画面に入る → ルームコードは #prep-mpbar に表示
+  await host.waitForSelector('#prep-mpbar', { state: 'visible', timeout: 10000 });
+  const roomText = await host.textContent('#prep-mpbar');
   const code = roomText?.match(/[A-Z2-9]{4}/)?.[0];
   console.log('host room:', roomText);
   if (!code) {
     console.error('NG: ルームコードが取得できません');
     process.exit(1);
   }
+  await host.click('#btn-kickoff'); // ホスト編成確定→試合へ
+  await host.waitForSelector('#sb', { timeout: 10000 });
 
   await guest.goto(BASE, { waitUntil: 'domcontentloaded' });
   await guest.fill('#room-code', code);
   await guest.click('#btn-join');
+  await guest.waitForSelector('#btn-kickoff', { state: 'visible', timeout: 10000 });
+  await guest.click('#btn-kickoff'); // ゲスト編成確定→試合へ
   await guest.waitForSelector('#sb', { timeout: 10000 });
   console.log('guest joined OK');
-
-  await host.waitForFunction(
-    () => document.getElementById('hud-room')?.textContent?.includes('参加'),
-    { timeout: 5000 },
-  );
-  console.log('host notified of guest join');
 
   const deadline = Date.now() + 90000;
   let hs = [0, 0];

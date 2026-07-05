@@ -49,13 +49,15 @@ await host.screenshot({ path: `${outDir}/m1-menu.png` });
 console.log('mobile menu OK (served from game server)');
 
 await host.tap('#btn-host');
-await host.waitForSelector('#hud-room', { state: 'visible', timeout: 10000 });
-const code = (await host.textContent('#hud-room'))?.match(/[A-Z2-9]{4}/)?.[0];
+await host.waitForSelector('#prep-mpbar', { state: 'visible', timeout: 10000 });
+const code = (await host.textContent('#prep-mpbar'))?.match(/[A-Z2-9]{4}/)?.[0];
 console.log('room code:', code);
 if (!code) {
   console.error('NG: ルームコード取得失敗');
   process.exit(1);
 }
+await host.tap('#btn-kickoff'); // ホスト編成確定
+await host.waitForSelector('#sb', { timeout: 10000 });
 // タッチ用 UI の存在確認
 for (const sel of ['#zone-r', '#ghost', '#btn-cam']) {
   if (!(await host.locator(sel).count())) {
@@ -70,6 +72,8 @@ const guest = await phonePage('guest');
 await guest.goto(BASE, { waitUntil: 'domcontentloaded' });
 await guest.fill('#room-code', code);
 await guest.tap('#btn-join');
+await guest.waitForSelector('#btn-kickoff', { state: 'visible', timeout: 10000 });
+await guest.tap('#btn-kickoff'); // ゲスト編成確定
 await guest.waitForSelector('#sb', { timeout: 10000 });
 console.log('guest (phone 2) joined');
 
