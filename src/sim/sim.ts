@@ -1614,7 +1614,10 @@ export class VolleySim {
         return;
       }
       case 'setChoice': {
-        if (this.setPrompt && this.setPrompt.team === team && !this.setPrompt.pressed) {
+        // トスが解決される前ならいつでも技を変更できる。
+        // （フリック操作は「押下でタイミング確定→離す瞬間に技を確定」する順序のため、
+        //  pressed 済みでも choice を上書きできる必要がある。resolveToss は choice を後で読む）
+        if (this.setPrompt && this.setPrompt.team === team) {
           this.setPrompt.choice = inp.choice;
         }
         return;

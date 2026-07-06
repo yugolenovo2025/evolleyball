@@ -308,24 +308,22 @@ export class Hud {
         this.onInput?.({ type: 'setChoice', choice });
         this.flickHint(lbl);
       } else if (flick && mode === 'spike') {
-        // スパイク派生: ↑ふわりフェイント ↓コントロール ←→ コース強打
+        // スパイク派生（すべて spikePreset で即時確定。チャージ長に依存せず必ず反映される）:
+        // ↑ふわりフェイント ↓抑え ←→ コース強打
         if (flick === 'U') {
           this.onInput?.({ type: 'spikePreset', power: 0.22 });
           this.flickHint('フェイント');
-          return;
-        }
-        if (flick === 'D') {
+        } else if (flick === 'D') {
           this.onInput?.({ type: 'spikePreset', power: 0.55 });
-          this.flickHint('コントロール');
-          return;
-        }
-        if (flick === 'L') {
-          this.onInput?.({ type: 'aimSet', z: -0.9 });
+          this.flickHint('抑え');
+        } else if (flick === 'L') {
+          this.onInput?.({ type: 'spikePreset', power: 0.85, aimZ: -0.9 });
           this.flickHint('左コース');
         } else if (flick === 'R') {
-          this.onInput?.({ type: 'aimSet', z: 0.9 });
+          this.onInput?.({ type: 'spikePreset', power: 0.85, aimZ: 0.9 });
           this.flickHint('右コース');
         }
+        return; // spikePreset がスイングを確定させるので actionUp は送らない
       } else if (flick && mode === 'serve') {
         if (flick === 'L') this.onInput?.({ type: 'aimSet', z: -0.8 });
         else if (flick === 'R') this.onInput?.({ type: 'aimSet', z: 0.8 });
