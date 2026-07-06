@@ -3,3 +3,4 @@ dist/
 scripts/shots/
 *.log
 .DS_Store
+.gitmsg.tmp
